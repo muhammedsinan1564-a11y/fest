@@ -22,6 +22,8 @@ export interface Program {
   entries: Entry[];
   /** Which named scale converts marks to grades for this program. */
   gradeScaleId?: string;
+  /** Access-user IDs of judges assigned to this program. Empty = any judge may judge. */
+  judges?: string[];
 }
 export interface Grade { id: string; name: string; min: number; max: number; point: number; }
 export interface GradeScale { id: string; name: string; grades: Grade[]; }
@@ -297,6 +299,20 @@ export function resultNo(d: FestData, pid: string): number | null {
   return typeof n === "number" ? n : null;
 }
 export interface ResultRow { e: Entry; label: string; color: string; mark?: number; grade?: Grade; gp: number; letter?: string; members: Member[]; }
+/**
+ * May this judge see / mark this program?
+ * A program with no judges assigned is open to every judge; once judges are
+ * assigned, only those judge accounts see it (matched by access-user id or name).
+ */
+export function canJudgeProgram(d: FestData, p: Program, judgeName: string): boolean {
+  const ids = p.judges || [];
+  if (ids.length === 0) return true;
+  const me = d.accessUsers.find((u) => u.name.toLowerCase() === judgeName.toLowerCase());
+  if (me && ids.includes(me.id)) return true;
+  // tolerate logs/data saved by name rather than id
+  return ids.some((jid) => d.accessUsers.find((u) => u.id === jid)?.name.toLowerCase() === judgeName.toLowerCase());
+}
+
 export function programResults(d: FestData, p: Program): ResultRow[] {
   const marks = d.judgementMarks[p.id] || {};
   const letters = d.codeLetters[p.id] || {};
@@ -395,6 +411,7 @@ function migrate(db: DB): DB {
     }
     for (const s of d.stages || []) if (typeof (s as Partial<Stage>).details !== "string") (s as Stage).details = "";
     for (const s of d.scheduleSlots) if (typeof s.endTime !== "string") s.endTime = s.time;
+    for (const p of d.programs || []) if (!Array.isArray(p.judges)) p.judges = [];
     // every fest needs a join code: {NAME}{DATE}-XXXX
     if (typeof f.createdAt !== "number") f.createdAt = Date.now();
     if (!f.code) {

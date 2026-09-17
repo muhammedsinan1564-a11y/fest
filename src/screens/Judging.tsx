@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useStore, st, setStatus, log, programResults, entryLabel, pointLabel, gradeFor, resultNo, scaleFor, scaleNameOf } from "../lib/store";
+import { useStore, st, setStatus, log, programResults, entryLabel, pointLabel, gradeFor, resultNo, scaleFor, scaleNameOf, canJudgeProgram } from "../lib/store";
 import type { Program } from "../lib/store";
 import { Icon, Btn, Tag, Empty, PageHead, SearchInput, useToast, useKeyNav } from "../lib/ui";
 import { useRef } from "react";
@@ -108,19 +108,24 @@ export function CodeLetterDetail({ params, back }: P) {
 
 /* ---------------- judgement ---------------- */
 export function JudgementSection({ push }: P) {
-  const { data } = useStore();
+  const { data, session } = useStore();
   const [q, setQ] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   useKeyNav(() => searchRef.current?.focus());
   if (!data) return null;
-  const progs = data.programs.filter((p) => st(data, p.id) === "FINISHED" && (data.lettersDone[p.id] || Object.keys(data.codeLetters[p.id] || {}).length > 0) && p.name.toLowerCase().includes(q.toLowerCase()));
+  const isJudge = session?.role === "JUDGE";
+  const judgeName = session?.name || "";
+  const progs = data.programs
+    .filter((p) => st(data, p.id) === "FINISHED" && (data.lettersDone[p.id] || Object.keys(data.codeLetters[p.id] || {}).length > 0))
+    .filter((p) => !isJudge || canJudgeProgram(data, p, judgeName))
+    .filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
   return (
     <div>
-      <PageHead title="Judgement" sub="Programs appear here only after they are finished and code letters are in.">
+      <PageHead title="Judgement" sub="Programs appear here only after they are finished and code letters are in. You only see programs assigned to you.">
         <SearchInput value={q} onChange={setQ} inputRef={searchRef} placeholder="Search…  ( / )" />
       </PageHead>
       <ProgList progs={progs} hint="awaiting marks" emptyIcon="scale" emptyTitle="Nothing to judge"
-        emptyBody="When a program is marked Finished (with code letters entered) it lands here for marking."
+        emptyBody="When a finished program is assigned to you (and has code letters) it lands here for marking."
         onPick={(p) => push({ id: "judgementDetail", params: { pid: p.id } })} />
     </div>
   );
@@ -139,6 +144,9 @@ export function JudgementDetail({ params, back }: P) {
   const savedMap = data?.judgementSaved[params?.pid || ""] || {};
   if (!data || !fest || !session) return null;
   if (!p) return <Empty icon="scale" title="Program not found" body="It may have been deleted." />;
+  if (session.role === "JUDGE" && !canJudgeProgram(data, p, session.name)) {
+    return <Empty icon="lock" title="Not assigned to you" body="This program is assigned to other judges. Ask the main user to add you in Programs → Judges." />;
+  }
   const rows = p.entries;
   const letters = data.codeLetters[p.id] || {};
 

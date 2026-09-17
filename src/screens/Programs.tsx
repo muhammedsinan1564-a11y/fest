@@ -172,25 +172,98 @@ export function AddMembersModal({ program, onClose, restrictTeam }: { program: P
   );
 }
 
+/* ---------------- add judges modal ---------------- */
+export function AddJudgesModal({ program, onClose }: { program: Program; onClose: () => void }) {
+  const { data, fest, session, updateFest } = useStore();
+  const toast = useToast();
+  const live = data?.programs.find((x) => x.id === program.id) || program;
+  const [sel, setSel] = useState<string[]>(() => [...(live.judges || [])]);
+  if (!data || !fest || !session) return null;
+
+  const judges = data.accessUsers.filter((u) => u.role === "JUDGE");
+  const toggle = (id: string) =>
+    setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  const judgeName = (id: string) => data.accessUsers.find((u) => u.id === id)?.name || "Removed judge";
+
+  const confirm = () => {
+    updateFest(fest.id, (d) => {
+      const dp = d.programs.find((x) => x.id === program.id);
+      if (!dp) return;
+      dp.judges = sel;
+      log(d, session.name, `${sel.length} judge(s) assigned to "${dp.name}"`);
+    });
+    toast(`${sel.length} judge(s) assigned`, "ok");
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Judges · ${live.name}`} w={620} footer={
+      <><Btn kind="soft" onClick={onClose}>Close</Btn><Btn onClick={confirm}>Save judges ({sel.length})</Btn></>
+    }>
+      {(live.judges || []).length > 0 && (
+        <div className="mb-4">
+          <span className="lbl">Currently assigned</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(live.judges || []).map((jid) => (
+              <span key={jid} className="tag" style={{ background: "color-mix(in srgb, var(--plum) 18%, transparent)", color: "var(--plum)" }}>
+                <Icon n="scale" s={12} /> {judgeName(jid)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {judges.length === 0 ? (
+        <div className="card2 py-9 text-center text-[13px] font-bold" style={{ color: "var(--mut)" }}>
+          No judge users yet. Create judges first in Access Control, then assign them here.
+        </div>
+      ) : (
+        <>
+          <span className="lbl">Pick the judges for this program — only they will see it</span>
+          <div className="grid sm:grid-cols-2 gap-1.5 max-h-[300px] overflow-y-auto pr-1">
+            {judges.map((u) => {
+              const on = sel.includes(u.id);
+              return (
+                <button key={u.id} type="button" onClick={() => toggle(u.id)}
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all"
+                  style={{ background: on ? "color-mix(in srgb, var(--plum) 18%, transparent)" : "var(--panel2)", border: `1.5px solid ${on ? "var(--plum)" : "var(--line)"}` }}>
+                  <span className="rounded flex items-center justify-center shrink-0" style={{ width: 18, height: 18, background: on ? "var(--plum)" : "transparent", border: on ? "none" : "1.5px solid var(--line2)", color: "#fff" }}>
+                    {on && <Icon n="check" s={12} sw={3} />}
+                  </span>
+                  <span className="font-bold text-[13px] truncate">{u.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 /* ---------------- programs section ---------------- */
 export function ProgramsSection(_: P) {
   const { data, fest, session, updateFest } = useStore();
   const toast = useToast(); const ask = useAsk();
-  const [q, setQ] = useState(""); const [fCat, setFCat] = useState(""); const [fStatus, setFStatus] = useState("");
+  const [q, setQ] = useState(""); const [fCat, setFCat] = useState("");
+  const [fVenue, setFVenue] = useState(""); const [fKind, setFKind] = useState("");
   const [form, setForm] = useState<null | { edit?: Program }>(null);
   const [view, setView] = useState<Program | null>(null);
   const [addingFor, setAddingFor] = useState<Program | null>(null);
+  const [judgesFor, setJudgesFor] = useState<Program | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useKeyNav(() => searchRef.current?.focus());
   if (!data || !fest || !session) return null;
   const isMain = session.role === "MAIN";
   const isTM = session.role === "TEAM MANAGER";
-  const progs = data.programs.filter((p) => 
-    p.name.toLowerCase().includes(q.toLowerCase()) && 
+  const progs = data.programs.filter((p) =>
+    p.name.toLowerCase().includes(q.toLowerCase()) &&
     (!fCat || p.categoryId === fCat) &&
-    (!fStatus || st(data, p.id) === fStatus)
+    (!fVenue || p.venue === fVenue) &&
+    (!fKind || p.kind === fKind)
   );
   const cName = (id: string) => data.categories.find((c) => c.id === id)?.name || "—";
+  const judgeNames = (p: Program) => (p.judges || []).map((jid) => data.accessUsers.find((u) => u.id === jid)?.name).filter(Boolean);
 
   const save = (f: PForm) => {
     if (!f.name.trim()) { toast("Program name is empty", "err"); return; }
@@ -216,7 +289,7 @@ export function ProgramsSection(_: P) {
           id: uid(), name: f.name.trim(), desc: f.desc, categoryId: f.categoryId, maxPerTeam, groupSize,
           venue: f.venue, kind: f.kind,
           marks: { first: parseInt(f.first) || 0, second: parseInt(f.second) || 0, third: parseInt(f.third) || 0 },
-          entries: [], gradeScaleId: f.gradeScaleId || undefined,
+          entries: [], gradeScaleId: f.gradeScaleId || undefined, judges: [],
         });
         log(d, session.name, `Program "${f.name}" created`);
       }
@@ -244,9 +317,15 @@ export function ProgramsSection(_: P) {
           <option value="">All categories</option>
           {data.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select className="select" style={{ width: "auto" }} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-          <option value="">All states</option>
-          {STATUS_FLOW.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+        <select className="select" style={{ width: "auto" }} value={fVenue} onChange={(e) => setFVenue(e.target.value)}>
+          <option value="">Stage / Off Stage</option>
+          <option value="STAGE">Stage</option>
+          <option value="OFF STAGE">Off Stage</option>
+        </select>
+        <select className="select" style={{ width: "auto" }} value={fKind} onChange={(e) => setFKind(e.target.value)}>
+          <option value="">Individual / Group</option>
+          <option value="INDIVIDUAL">Individual</option>
+          <option value="GROUP">Group</option>
         </select>
         {isMain && <Btn onClick={() => setForm({})}><Icon n="plus" s={16} sw={2.4} /> Add Program</Btn>}
       </PageHead>
@@ -271,11 +350,21 @@ export function ProgramsSection(_: P) {
                 </span>
               </div>
               {p.desc && <p className="text-[12.5px] font-semibold mt-2.5 line-clamp-2" style={{ color: "var(--mut)" }}>{p.desc}</p>}
-              <div className="flex items-center justify-between mt-3.5 pt-3" style={{ borderTop: "1px solid var(--line)" }}>
+              {(p.judges?.length ?? 0) > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2.5">
+                  {judgeNames(p).map((jn, i) => (
+                    <Tag key={i} color="var(--plum)"><Icon n="scale" s={11} /> {jn}</Tag>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2 mt-3.5 pt-3" style={{ borderTop: "1px solid var(--line)" }}>
                 <span className="text-[12px] font-extrabold" style={{ color: "var(--mut)" }}>
                   {p.entries.length} entr{p.entries.length === 1 ? "y" : "ies"} · max {p.maxPerTeam}/team{p.kind === "GROUP" ? ` · group ≤ ${p.groupSize}` : ""}
                 </span>
-                <Btn size="sm" kind="gold" onClick={() => setAddingFor(p)}><Icon n="plus" s={14} sw={2.6} /> Members</Btn>
+                <span className="flex gap-1.5">
+                  {isMain && <Btn size="sm" kind="soft" onClick={() => setJudgesFor(p)}><Icon n="scale" s={13} /> Judges{p.judges?.length ? ` (${p.judges.length})` : ""}</Btn>}
+                  <Btn size="sm" kind="gold" onClick={() => setAddingFor(p)}><Icon n="plus" s={14} sw={2.6} /> Members</Btn>
+                </span>
               </div>
             </div>
           ))}
@@ -293,6 +382,7 @@ export function ProgramsSection(_: P) {
           scales={(data.gradeScales || []).map((s) => ({ v: s.id, l: s.name }))} />
       )}
       {addingFor && <AddMembersModal program={addingFor} onClose={() => setAddingFor(null)} restrictTeam={isTM ? (session.teamId || "—") : undefined} />}
+      {judgesFor && <AddJudgesModal program={judgesFor} onClose={() => setJudgesFor(null)} />}
       <Modal open={!!view} onClose={() => setView(null)} title={view?.name || ""} w={540}>
         {view && (
           <div>

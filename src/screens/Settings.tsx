@@ -2,6 +2,10 @@ import { useState } from "react";
 import { useStore, log, defaultGradeScales } from "../lib/store";
 import { Icon, Btn, Field, Modal, Empty, PageHead, Dots, THEMES, useToast } from "../lib/ui";
 import { cloudEnabled, pushFest } from "../lib/cloud";
+import {
+  APP_FONT_CHOICES, getBodyFont, getHeadFont, setBodyFont, setHeadFont,
+  resetBodyFont, resetHeadFont, DEFAULT_BODY_FONT, DEFAULT_HEAD_FONT,
+} from "../lib/appFonts";
 import type { Route } from "./Shell";
 
 type P = { push: (r: Route) => void; params?: Record<string, string>; back?: () => void };
@@ -14,8 +18,29 @@ export function SettingsSection({ push: _push }: P) {
   const [defMaxTeam, setDefMaxTeam] = useState("2");
   const [defScaleId, setDefScaleId] = useState("");
 
+  const [bodyFont, setBodyFontState] = useState(getBodyFont());
+  const [headFont, setHeadFontState] = useState(getHeadFont());
+
   const [resetModal, setResetModal] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState("");
+
+  const changeBodyFont = (f: string) => {
+    setBodyFont(f);
+    setBodyFont(f);
+    toast(`Website font: ${f}`, "ok");
+  };
+  const changeHeadFont = (f: string) => {
+    setHeadFontState(f);
+    setHeadFont(f);
+    toast(`Heading font: ${f}`, "ok");
+  };
+  const resetFonts = () => {
+    resetBodyFont();
+    resetHeadFont();
+    setBodyFontState(DEFAULT_BODY_FONT);
+    setHeadFontState(DEFAULT_HEAD_FONT);
+    toast("Fonts reset to default", "ok");
+  };
 
   if (!data || !fest || !session) return null;
   const isMain = session.role === "MAIN";
@@ -135,6 +160,40 @@ export function SettingsSection({ push: _push }: P) {
               </Btn>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* 1b. FONTS */}
+      <div className="card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span style={{ color: "var(--sky)" }}><Icon n="text" s={18} /></span>
+          <span className="font-d text-[15px] font-extrabold">Typography</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="card2 p-3.5 space-y-2">
+            <span className="lbl">Font of the whole website</span>
+            <select className="select" value={bodyFont} onChange={(e) => changeBodyFont(e.target.value)}>
+              {APP_FONT_CHOICES.map((f) => <option key={f} value={f} style={{ fontFamily: `"${f}", sans-serif` }}>{f}</option>)}
+            </select>
+            <p className="text-[12px] font-semibold leading-relaxed" style={{ color: "var(--mut)" }}>
+              Body text, menus, tables and forms now use <b style={{ color: "var(--ink)" }}>{bodyFont}</b>.
+            </p>
+          </div>
+          <div className="card2 p-3.5 space-y-2">
+            <span className="lbl">Font of the headings</span>
+            <select className="select font-d" value={headFont} onChange={(e) => changeHeadFont(e.target.value)}>
+              {APP_FONT_CHOICES.map((f) => <option key={f} value={f} style={{ fontFamily: `"${f}", sans-serif` }} className="font-d">{f}</option>)}
+            </select>
+            <p className="font-d text-[13px] font-bold leading-tight" style={{ color: "var(--mut)" }}>
+              Section titles & headings now use <span style={{ color: "var(--ink)" }}>{headFont}</span>.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Btn kind="soft" onClick={resetFonts}><Icon n="undo" s={14} /> Reset fonts</Btn>
+          <span className="text-[11.5px] font-bold" style={{ color: "var(--mut)" }}>
+            Preview: <span className="font-d">Heading ABC</span> · body text 123
+          </span>
         </div>
       </div>
 

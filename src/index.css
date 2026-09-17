@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 :root, [data-theme="dark"] {
+  /* whole-app fonts — changed live from Settings (see lib/appFonts.ts) */
+  --app-body-font: "Courier Prime", "Courier New", ui-monospace, monospace;
+  --app-head-font: "Unbounded", "Manrope", ui-sans-serif, sans-serif;
   --bg: #0e1411;
   --bg2: #0a0f0c;
   --panel: #151c17;
@@ -122,13 +125,13 @@ html, body, #root { height: 100%; }
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: "Courier Prime", "Courier New", ui-monospace, monospace;
+  font-family: var(--app-body-font);
   font-size: 15px;
   letter-spacing: 0.01em;
   transition: background 0.35s ease, color 0.35s ease;
 }
-/* Section headings use the modern display face (Unbounded), while main menu stays in typewriter font */
-.font-d { font-family: "Unbounded", "Manrope", sans-serif; font-weight: 700; letter-spacing: -0.015em; }
+/* Section headings use the chosen display face (default Unbounded); body font is separate */
+.font-d { font-family: var(--app-head-font); font-weight: 700; letter-spacing: -0.015em; }
 /* the big "festize" wordmark on the first screen keeps the original display face */
 .wordmark { font-family: "Unbounded", "Manrope", sans-serif; font-weight: 900; }
 .font-bebas { font-family: "Special Elite", "Courier Prime", monospace; }

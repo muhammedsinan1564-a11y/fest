@@ -26,13 +26,12 @@
  */
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyAVDhEkcWotSJOnNIvzwfjU-fthlSNF_SY",
-  authDomain: "festize-clone.firebaseapp.com",
-  databaseURL: "https://festize-clone-default-rtdb.firebaseio.com",
-  projectId: "festize-clone",
-  storageBucket: "festize-clone.firebasestorage.app",
-  messagingSenderId: "613868785481",
-  appId: "1:613868785481:web:5b1f13ee6bbf2c0b3a5498"
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
 };
 
 /** True once you've filled in projectId — turns cloud sync on. */

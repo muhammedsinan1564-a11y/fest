@@ -63,6 +63,25 @@ export function ScheduleSection(_: P) {
 
   const membersInProgram = (pid: string) => new Set(data.programs.find((p) => p.id === pid)?.entries.flatMap((e) => e.memberIds) || []);
 
+  /** Names of members of the program in this cell who are double-booked in an overlapping slot. */
+  const memberConflicts = (stageId: string, slotId: string): string[] => {
+    const pid = cells[cellKey(stageId, slotId)];
+    const slot = slots.find((s) => s.id === slotId);
+    if (!pid || !slot) return [];
+    const members = membersInProgram(pid);
+    if (!members.size) return [];
+    const hits = new Set<string>();
+    for (const os of overlappingSlots(slot)) {
+      for (const stage of data.stages) {
+        const otherPid = cells[cellKey(stage.id, os.id)];
+        if (!otherPid || otherPid === pid) continue;
+        const otherMembers = membersInProgram(otherPid);
+        for (const mid of members) if (otherMembers.has(mid)) hits.add(data.members.find((m) => m.id === mid)?.name || "Member");
+      }
+    }
+    return [...hits];
+  };
+
   const overlappingSlots = (slot: ScheduleSlot) => {
     const a = slotStart(slot).getTime(), b = slotEnd(slot).getTime();
     if (isNaN(a) || isNaN(b)) return [];
@@ -224,10 +243,10 @@ export function ScheduleSection(_: P) {
                     const color = progColor(pid);
                     return (
                       <td key={slot.id} style={{ verticalAlign: "top", padding: 0, height: 62 }}>
-                        {isMain ? (
-                          <label className="block relative rounded-[10px] h-full transition-all cursor-pointer" style={{ minHeight: 58, background: pid ? color + "22" : "var(--panel2)", border: `1.5px solid ${pid ? color : "var(--line)"}` }}>
+                        {(() => { const clash = memberConflicts(stage.id, slot.id); return isMain ? (
+                          <label className="block relative rounded-[10px] h-full transition-all cursor-pointer" style={{ minHeight: 58, background: pid ? color + "22" : "var(--panel2)", border: `1.5px solid ${pid && clash.length ? "var(--coral)" : pid ? color : "var(--line)"}` }}>
                             {pid ? (
-                              <span className="block px-2.5 py-2 pointer-events-none"><span className="block w-1.5 h-1.5 rounded-full mb-1" style={{ background: color }} /><span className="block text-[12.5px] font-extrabold leading-tight line-clamp-2">{progName(pid)}</span><span className="block text-[10px] font-bold uppercase tracking-wide mt-0.5" style={{ color }}>{progCat(pid)}</span></span>
+                              <span className="block px-2.5 py-2 pointer-events-none"><span className="block w-1.5 h-1.5 rounded-full mb-1" style={{ background: color }} /><span className="block text-[12.5px] font-extrabold leading-tight line-clamp-2">{progName(pid)}</span><span className="block text-[10px] font-bold uppercase tracking-wide mt-0.5" style={{ color }}>{progCat(pid)}</span>{clash.length > 0 && <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-extrabold" style={{ color: "var(--coral)" }}>⚠ {clash[0]} double-booked</span>}</span>
                             ) : (
                               <span className="flex items-center justify-center h-full" style={{ color: "var(--mut)", minHeight: 58 }}><Icon n="plus" s={13} /></span>
                             )}
@@ -240,10 +259,10 @@ export function ScheduleSection(_: P) {
                             </select>
                           </label>
                         ) : pid ? (
-                          <div className="rounded-[10px] px-2.5 py-2" style={{ background: color + "22", border: `1.5px solid ${color}`, minHeight: 58 }}><span className="block w-1.5 h-1.5 rounded-full mb-1" style={{ background: color }} /><span className="block text-[12.5px] font-extrabold leading-tight line-clamp-2">{progName(pid)}</span><span className="block text-[10px] font-bold uppercase tracking-wide mt-0.5" style={{ color }}>{progCat(pid)}</span></div>
+                          <div className="rounded-[10px] px-2.5 py-2" style={{ background: color + "22", border: `1.5px solid ${clash.length ? "var(--coral)" : color}`, minHeight: 58 }}><span className="block w-1.5 h-1.5 rounded-full mb-1" style={{ background: color }} /><span className="block text-[12.5px] font-extrabold leading-tight line-clamp-2">{progName(pid)}</span><span className="block text-[10px] font-bold uppercase tracking-wide mt-0.5" style={{ color }}>{progCat(pid)}</span>{clash.length > 0 && <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-extrabold" style={{ color: "var(--coral)" }}>⚠ {clash[0]} double-booked</span>}</div>
                         ) : (
                           <div className="rounded-[10px] flex items-center justify-center" style={{ background: "var(--panel2)", border: "1px dashed var(--line2)", minHeight: 58, color: "var(--mut)" }}>-</div>
-                        )}
+                        ); })()}
                       </td>
                     );
                   })}

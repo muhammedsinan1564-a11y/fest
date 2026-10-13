@@ -2,10 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
-import { applyAppFonts } from "./lib/appFonts.ts";
+import { readTheme } from "./lib/theme";
 
-// restore the saved whole-app / heading fonts before first paint
-applyAppFonts();
+// Apply the saved palette before first paint so there is no colour flash.
+document.documentElement.dataset.theme = readTheme();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

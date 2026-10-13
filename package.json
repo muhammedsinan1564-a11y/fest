@@ -9,12 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@types/papaparse": "^5.5.2",
+    "@supabase/supabase-js": "^2.109.0",
     "@types/qrcode": "^1.5.6",
     "clsx": "2.1.1",
-    "firebase": "^12.18.0",
+    "framer-motion": "^14.0.0",
+    "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
-    "papaparse": "^5.6.0",
+    "lucide-react": "^1.54.0",
     "qrcode": "^1.5.4",
     "react": "19.2.6",
     "react-dom": "19.2.6",

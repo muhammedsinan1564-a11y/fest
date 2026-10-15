@@ -1,6 +1,56 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, Plus, Search, X } from "lucide-react";
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, Check, Download, LayoutGrid, List, Plus, Search, X } from "lucide-react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+
+/** Step 1 of every download: ask first, exactly like the printouts. */
+export function askToDownload(what: string) {
+  return window.confirm(`Do you want to download ${what}?\n\nA preview will open first so you can check it.`);
+}
+
+/**
+ * Steps 2 + 3 of every download: show the preview, then save on "Confirm download".
+ * Guards against double clicks, reports progress for long exports, and stays open
+ * with a readable message if anything fails.
+ */
+export function DownloadPreview({ title, subtitle, format, onClose, onConfirm, children, confirmLabel = "Confirm download" }: {
+  title: string;
+  subtitle?: string;
+  format: string;
+  onClose: () => void;
+  onConfirm: (report: (message: string) => void) => Promise<void>;
+  children: ReactNode;
+  confirmLabel?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const busyRef = useRef(false);
+  const close = () => { if (!busyRef.current) onClose(); };
+  const run = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError(""); setStatus("Preparing your file…");
+    try {
+      await onConfirm(setStatus);
+      busyRef.current = false; setBusy(false);
+      onClose();
+    } catch (reason) {
+      busyRef.current = false; setBusy(false); setStatus("");
+      setError(reason instanceof Error && reason.message ? reason.message : "The file could not be prepared. Please try again.");
+    }
+  };
+  return <Modal title={title} subtitle={subtitle} onClose={close} wide>
+    <div className="download-preview">
+      <div className="download-preview-meta"><span className="download-format">{format}</span><span>Preview · this is exactly what will be saved</span></div>
+      <div className="download-preview-body">{children}</div>
+      {error && <p className="warn-text" role="alert">{error}</p>}
+      <div className="form-actions download-actions">
+        {busy && <span className="download-status" aria-live="polite">{status}</span>}
+        <Button variant="secondary" onClick={close} disabled={busy}>Back</Button>
+        <Button onClick={() => void run()} disabled={busy}><Download size={16} /> {busy ? "Preparing…" : confirmLabel}</Button>
+      </div>
+    </div>
+  </Modal>;
+}
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -73,6 +123,28 @@ export function RowActions({ onView, onEdit, onDelete }: { onView?: () => void; 
 
 export function AddButton({ children = "Add new", onClick }: { children?: ReactNode; onClick: () => void }) {
   return <Button icon={<Plus size={17} />} onClick={onClick}>{children}</Button>;
+}
+
+/** List rows or a 3-in-a-row box grid; the choice is remembered per section and user. */
+export type ViewMode = "list" | "box";
+
+export function useViewPref(key: string): [ViewMode, (mode: ViewMode) => void] {
+  const [mode, setModeState] = useState<ViewMode>(() => {
+    try { return localStorage.getItem(`festize-view:${key}`) === "box" ? "box" : "list"; }
+    catch { return "list"; }
+  });
+  const setMode = (next: ViewMode) => {
+    setModeState(next);
+    try { localStorage.setItem(`festize-view:${key}`, next); } catch { /* storage unavailable */ }
+  };
+  return [mode, setMode];
+}
+
+export function ViewToggle({ mode, onChange }: { mode: ViewMode; onChange: (mode: ViewMode) => void }) {
+  return <div className="view-toggle" role="group" aria-label="Layout">
+    <button type="button" title="List view" aria-label="List view" aria-pressed={mode === "list"} className={mode === "list" ? "active" : ""} onClick={() => onChange("list")}><List size={14} /></button>
+    <button type="button" title="Box view · 3 in a row" aria-label="Box view" aria-pressed={mode === "box"} className={mode === "box" ? "active" : ""} onClick={() => onChange("box")}><LayoutGrid size={14} /></button>
+  </div>;
 }
 
 export function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {

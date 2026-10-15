@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Copy, LockKeyhole, Plus, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthLayout, Landing, PasswordInput } from "./Landing";
 import { Button, Field, IconButton, Modal, Toast } from "./ui";
 import { createDemoFest, emptyData, id, makeFestCode, randomPassword, username, type Fest, type FestData, type UserRecord } from "./types";
 import { cloudEnabled, createCloudFest, deleteCloudFest, getAdminFests, loadOfflineFests, loginAdmin, loginFest, provisionUser, saveCloudFest, saveOfflineFests, supabase, watchFest } from "./lib/persistence";
 import Workspace from "./Workspace";
+import IntroSequence, { shouldPlayIntro } from "./Intro";
 
 type Screen = "landing" | "admin-login" | "admin" | "join" | "fest-login" | "workspace";
 
@@ -38,6 +39,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [demoSwitch, setDemoSwitch] = useState(false);
+  // Opening intro: plays once when the website opens, then hands its logo to the first screen.
+  const [introPlaying, setIntroPlaying] = useState(shouldPlayIntro);
+  const [logoHandoff, setLogoHandoff] = useState(false);
+  const finishIntro = useCallback((handoff: boolean) => { setLogoHandoff(handoff); setIntroPlaying(false); }, []);
+  // The hand-over only applies to that first view; coming back later animates normally.
+  useEffect(() => { if (screen !== "landing") setLogoHandoff(false); }, [screen]);
 
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(""), 3600); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
@@ -217,7 +224,7 @@ export default function App() {
 
   return <>
     <AnimatePresence mode="wait">
-      {screen === "landing" && <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><Landing onExplore={startExplore} onJoin={() => { setDemoSwitch(false); setFestCode(""); setScreen("join"); }} /></motion.div>}
+      {screen === "landing" && <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><Landing onExplore={startExplore} onJoin={() => { setDemoSwitch(false); setFestCode(""); setScreen("join"); }} introActive={introPlaying} logoHandoff={logoHandoff} /></motion.div>}
       {screen === "admin-login" && <AuthLayout key="admin-login" onBack={() => setScreen("landing")} eyebrow="ADMINISTRATOR ACCESS" title="Behind every great fest." description="Enter your administrator password to manage your fests."><form onSubmit={submitAdmin} className="auth-form"><Field label="Password"><PasswordInput value={adminPassword} onChange={setAdminPassword} /></Field><Button type="submit" disabled={busy} className="auth-submit">{busy ? "Checking..." : "Enter control room"}<ArrowRight size={17} /></Button></form>{!cloudEnabled && <p className="auth-note">Offline preview mode. Add Supabase credentials to enable cross-device sync.</p>}</AuthLayout>}
       {screen === "join" && <AuthLayout key="join" onBack={() => setScreen("landing")} eyebrow="YOUR FEST AWAITS" title="Have a fest code?" description="Enter the unique code shared by your fest administrator."><form onSubmit={submitCode} className="auth-form"><Field label="Fest code"><input autoFocus required value={festCode} onChange={event => setFestCode(event.target.value.toUpperCase())} placeholder="Enter your fest code" /></Field><Button type="submit" className="auth-submit">Continue <ArrowRight size={17} /></Button></form><p className="auth-note">Scanning a participant QR code brings you straight here, already signed in.</p></AuthLayout>}
       {screen === "fest-login" && <AuthLayout key="fest-login" onBack={() => setScreen(demoSwitch ? "workspace" : "join")} eyebrow="WELCOME BACK" title="Step into your fest." description="Sign in with the username and password given to you."><form onSubmit={submitFestLogin} className="auth-form"><Field label="Username"><input autoFocus required value={loginName} onChange={event => setLoginName(event.target.value)} placeholder="Username" /></Field><Field label="Password"><PasswordInput value={loginPassword} onChange={setLoginPassword} /></Field><Button type="submit" disabled={busy} className="auth-submit">{busy ? "Signing in..." : "Enter workspace"}<ArrowRight size={17} /></Button></form>{demoSwitch && <p className="auth-note">Explore credentials: MAIN69 / DEMO999, JUDGE21 / JUDGE123, MANAGER07 / TEAM123. You can also use users you add.</p>}</AuthLayout>}
@@ -228,6 +235,7 @@ export default function App() {
     </AnimatePresence>
     {showCreate && <Modal title={editingFest ? "Edit fest" : "Create a fest"} subtitle="The beginning of something memorable." onClose={() => { setShowCreate(false); setEditingFest(null); }}><form onSubmit={saveFestForm} className="form-stack"><Field label="Fest name"><input required autoFocus value={festName} onChange={event => setFestName(event.target.value)} placeholder="e.g. Aurora Arts Festival" /></Field><Field label="Fest date"><input required type="date" value={festDate} onChange={event => setFestDate(event.target.value)} /></Field>{!editingFest && <Field label="Number of main users"><input required type="number" min="1" max="20" value={mainCount} onChange={event => setMainCount(event.target.value)} /></Field>}<div className="form-actions"><Button type="button" variant="secondary" onClick={() => { setShowCreate(false); setEditingFest(null); }}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving..." : "Confirm"} <ArrowRight size={16} /></Button></div></form></Modal>}
     {freshCredentials.length > 0 && <Modal title="Your main users are ready" subtitle="Copy these credentials now and share them securely with your team." onClose={() => setFreshCredentials([])}><div className="new-credentials">{freshCredentials.map(user => <div key={user.id}><div><strong>{user.name}</strong><span>{user.password}</span></div><IconButton label={`Copy credentials for ${user.name}`} onClick={() => { void navigator.clipboard.writeText(`${user.name} / ${user.password}`); notify("Credentials copied"); }}><Copy size={17} /></IconButton></div>)}</div><Button className="w-full mt-6" onClick={() => setFreshCredentials([])}>Done <Check size={17} /></Button></Modal>}
+    {introPlaying && <IntroSequence onDone={finishIntro} />}
     <Toast message={toast} onDismiss={() => setToast("")} />
   </>;
 }

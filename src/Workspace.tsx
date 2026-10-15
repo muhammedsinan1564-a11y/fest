@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ArrowLeft, Award, BarChart3, Bell, CalendarDays, ChevronRight, Clapperboard, ClipboardList, Dices, FileText, Gavel, IdCard, Image, Layers, LayoutDashboard, LogOut, MapPin, Megaphone, Moon, MoreHorizontal, Printer, Settings, ShieldCheck, Sparkles, Sun, Trophy, UserRound, Users, X, type LucideIcon } from "lucide-react";
+import { Activity, ArrowLeft, Award, BarChart3, Bell, CalendarDays, ChevronRight, Clapperboard, ClipboardList, Dices, FileText, Gavel, IdCard, Image, Layers, LayoutDashboard, LogOut, MapPin, Megaphone, Moon, MoreHorizontal, Printer, Settings, ShieldCheck, Sparkles, Sun, Timer, Trophy, UserRound, Users, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { IconButton } from "./ui";
 import ThemePicker from "./ThemePicker";
@@ -12,6 +12,7 @@ import { ScheduleAdvanced } from "./sections/ScheduleAdvanced";
 import { DashboardSection, PublicScoresSection, ResultsSection, SettingsSection, TeamMarksSection, TopCandidatesSection } from "./sections/Insights";
 import { IDCardSection, PosterTemplatesSection } from "./sections/Designer";
 import { PrintoutsSection } from "./sections/Printouts";
+import { StopwatchSection } from "./sections/Stopwatch";
 import type { SectionProps } from "./sections/common";
 
 interface WorkspaceProps {
@@ -30,7 +31,7 @@ const ICONS: Record<Section, LucideIcon> = {
   Programs: Clapperboard, "Program Control": Activity, Stages: MapPin, "Stage Control": Activity, Schedule: CalendarDays,
   Judgement: Gavel, "Team Marks": Trophy, "Grade Points": Award, "ID Card Setup": IdCard, Printouts: Printer,
   "Code Letter Entry": FileText, Results: Trophy, "Public Team Scores": BarChart3, "Random Picker": Dices,
-  "Random Letter": Dices, "Poster Templates": Image, "Top Candidates": Award, Monitor: ClipboardList,
+  "Random Letter": Dices, Stopwatch: Timer, "Poster Templates": Image, "Top Candidates": Award, Monitor: ClipboardList,
   Media: Megaphone, Bell, Settings,
 };
 
@@ -44,8 +45,8 @@ const MAIN_GROUPS: { label: string; items: Section[] }[] = [
 ];
 
 const ROLE_GROUPS: Record<string, { label: string; items: Section[] }[]> = {
-  JUDGE: [{ label: "YOUR SPACE", items: ["Dashboard", "Judgement", "Bell", "Results"] }],
-  MONITOR: [{ label: "YOUR SPACE", items: ["Dashboard", "Stage Control", "Code Letter Entry", "Monitor", "Public Team Scores", "Printouts", "Random Picker", "Random Letter"] }],
+  JUDGE: [{ label: "YOUR SPACE", items: ["Dashboard", "Judgement", "Stopwatch", "Bell"] }],
+  MONITOR: [{ label: "YOUR SPACE", items: ["Dashboard", "Stage Control", "Code Letter Entry", "Monitor", "Stopwatch", "Public Team Scores", "Printouts", "Random Picker", "Random Letter"] }],
   MEDIA: [{ label: "YOUR SPACE", items: ["Dashboard", "Monitor", "Media", "Results", "Poster Templates"] }],
   "STAGE MANAGER": [{ label: "YOUR SPACE", items: ["Dashboard", "Stage Control", "Stages", "Schedule", "Bell"] }],
 };
@@ -120,6 +121,7 @@ export default function Workspace({ fest, user, onChange, onProvision, onBack, o
       case "Monitor": return <MonitorSection {...props} />;
       case "Media": return <MonitorSection {...props} mediaOnly />;
       case "Bell": return <BellSection {...props} />;
+      case "Stopwatch": return <StopwatchSection {...props} />;
       case "Settings": return <SettingsSection {...props} />;
     }
   };

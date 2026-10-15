@@ -1,18 +1,25 @@
-import { useState } from "react";
-import { ArrowRight, Check, ChevronRight, CornerUpLeft, Lock } from "lucide-react";
-import { Button, Empty, PageHead, SearchInput, StatusBadge } from "../ui";
+import { useEffect, useState } from "react";
+import { ArrowRight, Check, ChevronRight, CornerUpLeft, Eye, Lock } from "lucide-react";
+import { Button, Empty, PageHead, SearchInput, StatusBadge, useViewPref, ViewToggle } from "../ui";
 import { entryGrade, getCategoryName, getGrade, programReadyForJudgement, STATUSES, type Program } from "../types";
 import { activeJudgesFor, isolatedViewForJudge, scoringMethodFor } from "../lib/fast";
 import { canManage, entryDisplay, rankedEntries, type SectionProps } from "./common";
 
 function ControlRow({ program, data, onNext, onUndo, canUpdate }: { program: Program; data: SectionProps["fest"]["data"]; onNext: () => void; onUndo: () => void; canUpdate: boolean }) {
-  return <div className="control-row"><div className="control-main"><span className="control-category">{getCategoryName(data, program.categoryId)} / {program.venue}</span><h3>{program.name}</h3><p>{program.entries.length} {program.format === "Group" ? "groups" : "candidates"} · {program.format}</p></div><div className="control-actions"><StatusBadge status={program.status} />{canUpdate && <><Button onClick={onNext} disabled={program.status >= 5} className="next-control">Go to next <ArrowRight size={15} /></Button><button className="undo-control" onClick={onUndo} disabled={program.status < 0}><CornerUpLeft size={14} /> Undo</button></>}</div></div>;
+  // Publishing is locked until the Monitor section confirms the result.
+  const reviewNote = program.status === 4 ? (program.monitorConfirmed ? <span className="control-note ok"><Check size={12} /> Monitor confirmed · ready to publish</span> : <span className="control-note wait"><Lock size={12} /> Waiting for monitor confirmation before publishing</span>) : null;
+  return <div className="control-row"><div className="control-main"><span className="control-category">{getCategoryName(data, program.categoryId)} / {program.venue}</span><h3>{program.name}</h3><p>{program.entries.length} {program.format === "Group" ? "groups" : "candidates"} · {program.format}</p>{reviewNote}</div><div className="control-actions"><StatusBadge status={program.status} />{canUpdate && <><Button onClick={onNext} disabled={program.status >= 5} className="next-control">Go to next <ArrowRight size={15} /></Button><button className="undo-control" onClick={onUndo} disabled={program.status < 0}><CornerUpLeft size={14} /> Undo</button></>}</div></div>;
 }
 
 export function ControlSection({ fest, user, onChange, notify, stageOnly = false }: SectionProps & { stageOnly?: boolean }) {
-  const data = fest.data; const [query, setQuery] = useState("");
+  const data = fest.data; const [query, setQuery] = useState(""); const [statusFilter, setStatusFilter] = useState("");
+  const [view, setView] = useViewPref(`control-${stageOnly ? "stage" : "program"}:${fest.id}:${user.id}`);
   const canUpdate = canManage(user) || (stageOnly && (user.role === "MONITOR" || user.role === "STAGE MANAGER"));
-  const programs = data.programs.filter(program => (!stageOnly || program.status < 2) && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
+  const statusOf = (program: Program) => program.status < 0 ? "unstarted" : String(program.status);
+  const statusOptions: [string, string][] = stageOnly
+    ? [["", "All states"], ["unstarted", "Not started"], ["0", "Reporting"], ["1", "Started"]]
+    : [["", "All states"], ["unstarted", "Not started"], ["0", "Reporting"], ["1", "Started"], ["2", "Finished"], ["3", "Judgements"], ["4", "Finalysed"], ["5", "Published"]];
+  const programs = data.programs.filter(program => (!stageOnly || program.status < 2) && (!statusFilter || statusOf(program) === statusFilter) && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
   const counts = [{ name: "Not started", count: data.programs.filter(program => program.status < 0).length }, ...STATUSES.map((name, index) => ({ name, count: data.programs.filter(program => program.status === index).length }))];
   const next = (program: Program) => {
     if (!canUpdate || program.status >= 5) return;
@@ -22,16 +29,24 @@ export function ControlSection({ fest, user, onChange, notify, stageOnly = false
     if (newStatus >= 2 && !program.judgeIds.length) return notify("Assign at least one judge to this program before finishing it.");
     if (newStatus >= 3 && !programReadyForJudgement(program)) return notify("All assigned judges must save a mark for every code letter first.");
     if (newStatus === 5 && program.status < 4) return notify("Finalise this program before publishing.");
+    if (newStatus === 5 && !program.monitorConfirmed) return notify("Confirm this result in the Monitor section before publishing.");
     onChange(current => ({ ...current, programs: current.programs.map(item => item.id === program.id ? { ...item, status: newStatus, resultNumber: newStatus === 5 ? Math.max(0, ...current.programs.map(value => value.resultNumber || 0)) + 1 : item.resultNumber } : item) }), `${program.name} moved to ${STATUSES[newStatus]}`);
     notify(`${program.name} · ${STATUSES[newStatus]}`);
   };
   const undo = (program: Program) => {
     if (!canUpdate || program.status < 0) return;
     const target = program.status - 1;
-    onChange(current => ({ ...current, programs: current.programs.map(item => item.id === program.id ? { ...item, status: target, resultNumber: program.status === 5 ? undefined : item.resultNumber, monitorConfirmed: target < 3 ? false : item.monitorConfirmed } : item), publicProgramIds: program.status === 5 ? current.publicProgramIds.filter(programId => programId !== program.id) : current.publicProgramIds }), `${program.name} returned to ${target < 0 ? "Not started" : STATUSES[target]}`);
+    onChange(current => ({ ...current, programs: current.programs.map(item => item.id === program.id ? { ...item, status: target, resultNumber: program.status === 5 ? undefined : item.resultNumber, monitorConfirmed: target < 3 ? false : item.monitorConfirmed, monitorConfirmedAt: target < 3 ? undefined : item.monitorConfirmedAt } : item), publicProgramIds: program.status === 5 ? current.publicProgramIds.filter(programId => programId !== program.id) : current.publicProgramIds }), `${program.name} returned to ${target < 0 ? "Not started" : STATUSES[target]}`);
     notify(`Undid the last stage for ${program.name}`);
   };
-  return <><PageHead eyebrow={stageOnly ? "LIVE / STAGE FLOW" : "LIVE / PROGRAM FLOW"} title={stageOnly ? "Stage Control" : "Program Control"} description={stageOnly ? "What is coming up, reporting, or happening on stage." : "Move each program forward, one completed step at a time."} /><div className="control-stats">{counts.map(item => <div key={item.name}><strong>{String(item.count).padStart(2, "0")}</strong><span>{item.name}</span></div>)}</div><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search programs" /><span className="toolbar-count">{programs.length} visible</span></div>{programs.length ? <div className="control-list">{programs.map(program => <ControlRow key={program.id} program={program} data={data} canUpdate={canUpdate} onNext={() => next(program)} onUndo={() => undo(program)} />)}</div> : <Empty title={stageOnly ? "The stage is clear" : "No programs here yet"} description={stageOnly ? "Programs disappear from stage control when they finish." : "Create a program to begin moving your fest forward."} />}</>;
+  return <><PageHead eyebrow={stageOnly ? "LIVE / STAGE FLOW" : "LIVE / PROGRAM FLOW"} title={stageOnly ? "Stage Control" : "Program Control"} description={stageOnly ? "What is coming up, reporting, or happening on stage." : "Move each program forward, one completed step at a time."} /><div className="control-stats">{counts.map(item => <div key={item.name}><strong>{String(item.count).padStart(2, "0")}</strong><span>{item.name}</span></div>)}</div><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search programs" /><ViewToggle mode={view} onChange={setView} /><select aria-label="Filter by state" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>{statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><span className="toolbar-count">{programs.length} visible</span></div>{programs.length ? view === "box"
+    ? <div className="card-grid">{programs.map(program => <div className="mini-card" key={program.id}>
+        <div className="mini-card-head"><div className="mini-card-title"><strong>{program.name}</strong><small>{getCategoryName(data, program.categoryId)} / {program.venue}</small></div><StatusBadge status={program.status} /></div>
+        <div className="mini-card-meta"><span>{program.entries.length} {program.format === "Group" ? "groups" : "candidates"}</span><span>{program.format}</span></div>
+        {canUpdate && <div className="mini-card-actions"><Button className="mini-btn" onClick={() => next(program)} disabled={program.status >= 5}>Go to next <ArrowRight size={13} /></Button><button className="undo-control" onClick={() => undo(program)} disabled={program.status < 0}><CornerUpLeft size={13} /> Undo</button></div>}
+      </div>)}</div>
+    : <div className="control-list">{programs.map(program => <ControlRow key={program.id} program={program} data={data} canUpdate={canUpdate} onNext={() => next(program)} onUndo={() => undo(program)} />)}</div>
+    : <Empty title={stageOnly ? "The stage is clear" : "No programs here yet"} description={stageOnly ? "Programs disappear from stage control when they finish." : "Create a program to begin moving your fest forward."} />}</>;
 }
 
 export function CodeLetterSection({ fest, onChange, notify }: SectionProps) {
@@ -64,6 +79,19 @@ export function JudgementSection({ fest, user, onChange, notify }: SectionProps)
   const data = fest.data; const [query, setQuery] = useState(""); const [activeId, setActiveId] = useState<string | null>(null); const [marks, setMarks] = useState<Record<string, string>>({});
   const judgeId = user.role === "MAIN" ? "main" : user.id;
   const isJudge = user.role === "JUDGE";
+
+  // Main user: a spectating area only. No marks, no counts, no scoring —
+  // just the name and category of each program that is with the judges.
+  if (user.role === "MAIN") {
+    const beingJudged = data.programs.filter(program => program.status === 2 && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
+    return <><PageHead eyebrow="EVALUATION / SPECTATING" title="Judgement" description="A watch-only view of the programs currently with the judges. Marks are entered privately on each judge's own device." />
+      <div className="spectate-banner"><Eye size={15} /><strong>Spectating</strong><span>Watch only · program names and categories under judgement</span></div>
+      <div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search programs" /><span className="toolbar-count">{beingJudged.length} under judgement</span></div>
+      {beingJudged.length
+        ? <div className="spectate-list">{beingJudged.map(program => <div key={program.id} className="spectate-row"><div><span className="eyebrow">{getCategoryName(data, program.categoryId)}</span><h3>{program.name}</h3></div><span className="spectate-live"><span className="fast-pulse" /> With the judges</span></div>)}</div>
+        : <Empty title="Nothing is being judged right now" description="Programs appear here once they finish on stage and move to the judges." />}
+    </>;
+  }
   const assigned = data.programs.filter(program => user.role === "MAIN" || program.judgeIds.includes(user.id));
   const waiting = assigned.filter(program => program.status === 2 && program.entries.length && program.entries.some(entry => typeof entry.marks[judgeId] !== "number") && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
   const active = assigned.find(program => program.id === activeId);
@@ -99,13 +127,40 @@ export function JudgementSection({ fest, user, onChange, notify }: SectionProps)
 
 export function MonitorSection({ fest, user, onChange, notify, mediaOnly = false }: SectionProps & { mediaOnly?: boolean }) {
   const data = fest.data; const [query, setQuery] = useState(""); const [activeId, setActiveId] = useState<string | null>(null);
-  const programs = data.programs.filter(program => program.status >= 3 && (!mediaOnly || program.monitorConfirmed) && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
+  const [stateFilter, setStateFilter] = useState(""); const [catFilter, setCatFilter] = useState("");
+  const [view, setView] = useViewPref(`monitor-${mediaOnly ? "media" : "monitor"}:${fest.id}:${user.id}`);
+  /** The result that was just confirmed, briefly highlighted at its new place. */
+  const [movedId, setMovedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!movedId) return;
+    const timer = setTimeout(() => setMovedId(null), 2600);
+    return () => clearTimeout(timer);
+  }, [movedId]);
+  const stateOf = (program: Program) => program.status === 5 ? "published" : program.monitorConfirmed ? "confirmed" : "pending";
+  const programs = data.programs.filter(program => program.status >= 3 && (!mediaOnly || program.monitorConfirmed) && (!stateFilter || stateOf(program) === stateFilter) && (!catFilter || program.categoryId === catFilter) && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
+  // Unconfirmed results stay on top; confirmed ones sink below all of them,
+  // with the most recently confirmed at the very bottom.
+  const pending = programs.filter(program => !program.monitorConfirmed);
+  const confirmed = programs.filter(program => program.monitorConfirmed).sort((a, b) => (a.monitorConfirmedAt ?? "").localeCompare(b.monitorConfirmedAt ?? ""));
   const active = data.programs.find(program => program.id === activeId);
   const confirm = () => {
     if (!active) return;
-    onChange(next => ({ ...next, programs: next.programs.map(program => program.id === active.id ? { ...program, monitorConfirmed: true } : program) }), `${active.name} checked in Monitor`);
-    setActiveId(null); notify("Review confirmed. This does not publish the result.");
+    const at = new Date().toISOString();
+    onChange(next => ({ ...next, programs: next.programs.map(program => program.id === active.id ? { ...program, monitorConfirmed: true, monitorConfirmedAt: at } : program) }), `${active.name} confirmed in Monitor`);
+    setMovedId(active.id); setActiveId(null);
+    notify(`${active.name} confirmed and moved to the bottom. It can now be published in Program Control.`);
   };
-  if (active) return <><PageHead back={() => setActiveId(null)} eyebrow={mediaOnly ? "MEDIA / APPROVED" : "RESULT REVIEW"} title={active.name} description={`${getCategoryName(data, active.categoryId)} · ${active.entries.length} candidates. Scores are shown as grade points, never raw marks.`} /><div className="table-wrap"><table className="data-table"><thead><tr><th>RANK</th><th>CANDIDATE</th><th>CODE LETTER</th><th>GRADE</th><th>GRADE POINTS</th></tr></thead><tbody>{rankedEntries(active, data).map((entry, index) => <tr key={entry.id}><td>{String(index + 1).padStart(2, "0")}</td><td><strong>{entryDisplay(active, entry, data)}</strong></td><td>{entry.codeLetter || "—"}</td><td>{entryGrade(entry, active, data)?.name || "—"}</td><td>{entryGrade(entry, active, data)?.points ?? "No grade"}</td></tr>)}</tbody></table></div>{!mediaOnly && (user.role === "MAIN" || user.role === "MONITOR") && <div className="bottom-action"><Button onClick={confirm}>{active.monitorConfirmed ? "Reviewed · confirm again" : "Confirm review"} <Check size={17} /></Button><p>Confirming review does not publish this result.</p></div>}</>;
-  return <><PageHead eyebrow={mediaOnly ? "RESULTS / MEDIA" : "RESULTS / REVIEW"} title={mediaOnly ? "Media" : "Monitor"} description={mediaOnly ? "Results confirmed by the monitor, ready for your creative team." : "Check scored results before they reach the public. Confirmation is not publication."} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search results" /><span className="toolbar-count">{programs.length} results</span></div>{programs.length ? <div className="click-list">{programs.map(program => <button key={program.id} onClick={() => setActiveId(program.id)}><div><span className="eyebrow">{getCategoryName(data, program.categoryId)} · {program.status === 5 ? "Published" : "In review"}</span><h3>{program.name}</h3><p>{program.entries.length} candidates · {data.scales.find(scale => scale.id === program.scaleId)?.name}</p></div><span className="click-end">{program.monitorConfirmed && <span className="review-tick" title="Review confirmed"><Check size={16} /></span>}<ChevronRight size={20} /></span></button>)}</div> : <Empty title={mediaOnly ? "No approved results yet" : "No results to review"} description={mediaOnly ? "Confirmed monitor results appear here." : "Judged programs arrive here for review."} />}</>;
+  const renderRow = (program: Program) => <button key={program.id} className={program.id === movedId ? "just-moved" : ""} ref={program.id === movedId ? element => element?.scrollIntoView({ block: "nearest", behavior: "smooth" }) : undefined} onClick={() => setActiveId(program.id)}><div><span className="eyebrow">{getCategoryName(data, program.categoryId)} · {program.status === 5 ? "Published" : program.monitorConfirmed ? "Confirmed" : "Awaiting confirmation"}</span><h3>{program.name}</h3><p>{program.entries.length} candidates · {data.scales.find(scale => scale.id === program.scaleId)?.name}</p></div><span className="click-end">{program.monitorConfirmed && <span className="review-tick" title="Confirmed"><Check size={16} /></span>}<ChevronRight size={20} /></span></button>;
+  const renderCard = (program: Program) => <button key={program.id} className={`mini-card card-button ${program.id === movedId ? "just-moved" : ""}`} onClick={() => setActiveId(program.id)}><div className="mini-card-head"><div className="mini-card-title"><strong>{program.name}</strong><small>{getCategoryName(data, program.categoryId)} · {program.status === 5 ? "Published" : program.monitorConfirmed ? "Confirmed" : "Awaiting confirmation"}</small></div>{program.monitorConfirmed && <span className="review-tick" title="Confirmed"><Check size={15} /></span>}</div><div className="mini-card-meta"><span>{program.entries.length} candidates</span><span>{data.scales.find(scale => scale.id === program.scaleId)?.name || "No scale"}</span></div></button>;
+  if (active) return <><PageHead back={() => setActiveId(null)} eyebrow={mediaOnly ? "MEDIA / APPROVED" : "RESULT REVIEW"} title={active.name} description={`${getCategoryName(data, active.categoryId)} · ${active.entries.length} candidates. Scores are shown as grade points, never raw marks.`} /><div className="table-wrap"><table className="data-table"><thead><tr><th>RANK</th><th>CANDIDATE</th><th>CODE LETTER</th><th>GRADE</th><th>GRADE POINTS</th></tr></thead><tbody>{rankedEntries(active, data).map((entry, index) => <tr key={entry.id}><td>{String(index + 1).padStart(2, "0")}</td><td><strong>{entryDisplay(active, entry, data)}</strong></td><td>{entry.codeLetter || "—"}</td><td>{entryGrade(entry, active, data)?.name || "—"}</td><td>{entryGrade(entry, active, data)?.points ?? "No grade"}</td></tr>)}</tbody></table></div>{!mediaOnly && (user.role === "MAIN" || user.role === "MONITOR") && <div className="bottom-action"><Button onClick={confirm}>{active.monitorConfirmed ? "Confirmed · confirm again" : "Confirm"} <Check size={17} /></Button><p>Confirming moves this result below all others and unlocks publishing in Program Control. It does not publish by itself.</p></div>}</>;
+  return <><PageHead eyebrow={mediaOnly ? "RESULTS / MEDIA" : "RESULTS / REVIEW"} title={mediaOnly ? "Media" : "Monitor"} description={mediaOnly ? "Results confirmed by the monitor, ready for your creative team." : "Check scored results before they reach the public. A result can only be published after it is confirmed here."} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search results" /><ViewToggle mode={view} onChange={setView} />{mediaOnly
+      ? <select aria-label="Filter by category" value={catFilter} onChange={event => setCatFilter(event.target.value)}><option value="">All categories</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+      : <select aria-label="Filter by state" value={stateFilter} onChange={event => setStateFilter(event.target.value)}><option value="">All states</option><option value="pending">Awaiting confirmation</option><option value="confirmed">Confirmed</option><option value="published">Published</option></select>}<span className="toolbar-count">{mediaOnly ? `${confirmed.length} results` : `${pending.length} awaiting · ${confirmed.length} confirmed`}</span></div>{programs.length ? view === "box"
+    ? <div className="card-grid">{[...pending, ...confirmed].map(renderCard)}</div>
+    : <div className="click-list">
+      {!mediaOnly && pending.length > 0 && <div className="monitor-group-label">Awaiting confirmation · {pending.length}</div>}
+      {!mediaOnly && pending.map(renderRow)}
+      {!mediaOnly && confirmed.length > 0 && <div className="monitor-group-label done"><Check size={12} /> Confirmed · {confirmed.length}</div>}
+      {confirmed.map(renderRow)}
+    </div> : <Empty title={mediaOnly ? "No approved results yet" : "No results to review"} description={mediaOnly ? "Confirmed monitor results appear here." : "Judged programs arrive here for review."} />}</>;
 }

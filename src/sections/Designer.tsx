@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { toPng } from "html-to-image";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { ArrowRight, Download, ImagePlus, MoreHorizontal, Plus, Redo2, Save, Trash2, Undo2, Upload, Wand2, ZoomIn, ZoomOut } from "lucide-react";
-import { AddButton, Button, Empty, Field, IconButton, Modal, PageHead, RowActions } from "../ui";
+import { AddButton, askToDownload, Button, DownloadPreview, Empty, Field, IconButton, Modal, PageHead, RowActions } from "../ui";
+import { buildFontEmbedCSS, fileSlug, renderNodePng } from "../lib/exporter";
 import { entryGrade, getCategoryName, getTeamName, id, type CardDesign, type DesignElement, type ElementKind, type FestData, type Member, type PosterTemplate, type Program } from "../types";
 import { ALL_FONTS, fontStack, loadFonts } from "../lib/fonts";
 import { backgroundIsLight, fitTextColors } from "../lib/contrast";
@@ -197,22 +197,51 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
       if (announce) notify("Text colours adjusted to suit the background");
     } catch { if (announce) notify("Could not read that image's colours."); }
   };
-  const downloadCards = async () => {
+  // ---- Download: ask → preview → confirm (same flow as the printouts) ----
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+  /** Chest numbers stay stable no matter how the sheet is ordered. */
+  const chestNumber = (member: Member) => data.members.indexOf(member) + 1;
+  /** Card order on paper: grouped by team when each team starts a new page. */
+  const orderedMembers = useMemo(() => config.newTeamPage
+    ? [...data.members].sort((a, b) => getTeamName(data, a.teamId).localeCompare(getTeamName(data, b.teamId)))
+    : data.members, [config.newTeamPage, data]);
+  /** Exactly how the PDF will break into pages. */
+  const pages = useMemo(() => {
+    const result: Member[][] = []; let current: Member[] = []; let lastTeam = "";
+    for (const member of orderedMembers) {
+      if (current.length && ((config.newTeamPage && member.teamId !== lastTeam) || current.length >= perPage)) { result.push(current); current = []; }
+      current.push(member); lastTeam = member.teamId;
+    }
+    if (current.length) result.push(current);
+    return result;
+  }, [orderedMembers, config.newTeamPage, perPage]);
+  const startCardDownload = () => {
     if (!data.members.length) return notify("Add members before downloading ID cards.");
     if (!fitsOnPaper) return notify("This card is larger than the chosen paper. Adjust the size, margin or paper first.");
-    if (!window.confirm(`Preview is ready. Download ID cards for ${data.members.length} members?`)) return;
-    try {
-      const nodes = document.querySelectorAll<HTMLElement>("[data-card-export]");
-      if (!nodes.length) return notify("Open Sheet preview to prepare the cards.");
-      const pdf = new jsPDF({ orientation: paper.width > paper.height ? "landscape" : "portrait", unit: "mm", format: [paper.width, paper.height] });
-      const width = config.width; const height = config.height; const margin = config.margin; const gap = config.gap;
-      let x = margin; let y = margin; let lastTeam = ""; let hasCard = false;
-      for (let index = 0; index < nodes.length; index++) {
-        const member = data.members[index];
-        if (config.newTeamPage && lastTeam && member?.teamId !== lastTeam) { pdf.addPage([paper.width, paper.height]); x = margin; y = margin; }
-        if (x + width > paper.width - margin + .1) { x = margin; y += height + gap; }
-        if (y + height > paper.height - margin + .1) { pdf.addPage([paper.width, paper.height]); x = margin; y = margin; }
-        const png = await toPng(nodes[index], { pixelRatio: 3, cacheBust: true });
+    if (askToDownload(`ID cards for ${data.members.length} member${data.members.length === 1 ? "" : "s"} as a PDF`)) setDownloadOpen(true);
+  };
+  const confirmCardDownload = async (report: (message: string) => void) => {
+    const nodes = Array.from(exportRef.current?.querySelectorAll<HTMLElement>("[data-card-export]") ?? []);
+    if (!nodes.length) throw new Error("The cards are still being prepared. Please try again in a moment.");
+    // QR codes are generated as the cards mount; wait until none are still placeholders.
+    report("Preparing QR codes…");
+    const deadline = Date.now() + 4000;
+    while (exportRef.current?.querySelector(".qr-element .image-empty") && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 120));
+    report("Preparing fonts…");
+    // Every card shares one design, so the font CSS is built once and reused.
+    const fontEmbedCSS = await buildFontEmbedCSS(nodes[0]).catch(() => "");
+    const pdf = new jsPDF({ orientation: paper.width > paper.height ? "landscape" : "portrait", unit: "mm", format: [paper.width, paper.height] });
+    const { width, height, margin, gap } = config;
+    let rendered = 0;
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      if (pageIndex) pdf.addPage([paper.width, paper.height]);
+      for (let slot = 0; slot < pages[pageIndex].length; slot++) {
+        const x = margin + (slot % columns) * (width + gap);
+        const y = margin + Math.floor(slot / columns) * (height + gap);
+        rendered += 1;
+        report(`Rendering card ${rendered} of ${nodes.length}…`);
+        const png = await renderNodePng(nodes[rendered - 1], { pixelRatio: 3, fontEmbedCSS });
         pdf.addImage(png, "PNG", x, y, width, height);
         if (config.cropMarks) {
           pdf.setDrawColor(70); pdf.setLineWidth(.12);
@@ -221,12 +250,13 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
             pdf.line(cornerX, cornerY + vertical * .5, cornerX, cornerY + vertical * 3);
           }
         }
-        x += width + gap; lastTeam = member?.teamId || ""; hasCard = true;
       }
-      if (hasCard) pdf.save(`${fest.name.replace(/\s+/g, "-")}-id-cards.pdf`);
-      notify("ID cards downloaded exactly as previewed");
-    } catch { notify("Could not export cards. Try again after your images finish loading."); }
+    }
+    report("Saving PDF…");
+    pdf.save(`${fileSlug(fest.name)}-id-cards.pdf`);
+    notify("ID cards downloaded exactly as previewed");
   };
+  const modalScale = Math.min(1.65, Math.max(.9, ((typeof window === "undefined" ? 900 : Math.min(window.innerWidth, 900)) - 150) / paper.width));
   const selected = designer.elements.find(element => element.id === designer.selectedId);
   const uploadBackground = async (file?: File) => {
     if (!file) return;
@@ -235,7 +265,7 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
     await recolorText(source, false);
     notify("Template added. Text colours now follow the background.");
   };
-  return <><PageHead eyebrow="CREATE / IDENTITY" title="ID Card Designer" description="A small studio for badges that feel unmistakably yours." action={<div className="button-row"><span className="saved-indicator">{saved ? "Saved" : "Unsaved changes"}</span><Button onClick={save}><Save size={16} /> Save design</Button></div>} /><div className="editor-steps"><button className={tab === "setup" ? "active" : ""} onClick={() => setTab("setup")}>1. Card setup</button><button className={tab === "design" ? "active" : ""} onClick={() => setTab("design")}>2. Design</button><button className={tab === "sheet" ? "active" : ""} onClick={() => setTab("sheet")}>3. Sheet preview</button></div>
+  return <><PageHead eyebrow="CREATE / IDENTITY" title="ID Card Designer" description="A small studio for badges that feel unmistakably yours." action={<div className="button-row"><span className="saved-indicator">{saved ? "Saved" : "Unsaved changes"}</span><Button variant="secondary" onClick={startCardDownload} disabled={!data.members.length || !fitsOnPaper}><Download size={16} /> Download</Button><Button onClick={save}><Save size={16} /> Save design</Button></div>} /><div className="editor-steps"><button className={tab === "setup" ? "active" : ""} onClick={() => setTab("setup")}>1. Card setup</button><button className={tab === "design" ? "active" : ""} onClick={() => setTab("design")}>2. Design</button><button className={tab === "sheet" ? "active" : ""} onClick={() => setTab("sheet")}>3. Sheet preview</button></div>
     {tab === "setup" && <div className="card-setup-layout"><div className="setup-panel"><span className="eyebrow">CARD SETUP</span><h3>Make it yours.</h3><Field label="Card size"><select value={ratioMode === "Custom" ? "custom" : `${config.width}x${config.height}`} onChange={event => {
       if (event.target.value === "custom") { setRatioMode("Custom"); return; }
       const [width, height] = event.target.value.split("x").map(Number);
@@ -244,7 +274,14 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
     {ratioMode === "Custom" && <div className="inspector-grid"><Field label="Width mm"><input type="number" min="20" max="400" value={config.width} onChange={event => { const width = Math.min(400, Math.max(20, Number(event.target.value) || 0)); changeConfig({ width, orientation: width > config.height ? "Landscape" : "Portrait" }); }} /></Field><Field label="Height mm"><input type="number" min="20" max="400" value={config.height} onChange={event => { const height = Math.min(400, Math.max(20, Number(event.target.value) || 0)); changeConfig({ height, orientation: config.width > height ? "Landscape" : "Portrait" }); }} /></Field></div>}
     <Field label="Orientation" hint={`${config.width} × ${config.height} mm`}><select value={config.orientation} onChange={event => { const orientation = event.target.value as CardDesign["orientation"]; const longest = Math.max(config.width, config.height); const shortest = Math.min(config.width, config.height); changeConfig({ orientation, width: orientation === "Landscape" ? longest : shortest, height: orientation === "Landscape" ? shortest : longest }); }}><option>Portrait</option><option>Landscape</option></select></Field><Field label="Paper" hint={`${columns} × ${rows} cards per page · ${perPage} per sheet`}><select value={config.paper || "A4 portrait"} onChange={event => changeConfig({ paper: event.target.value })}>{Object.entries(PAPERS).map(([name, size]) => <option key={name} value={name}>{name} · {size.width} × {size.height} mm</option>)}</select></Field><Field label="Template"><input type="file" accept="image/png,image/jpeg" onChange={event => void uploadBackground(event.target.files?.[0])} /></Field><small className="muted">Upload PNG or JPEG. Recommended with 3 mm bleed: 957 × 1311 px at 300 DPI. Photo and QR fields stay exactly {FIXED_SQUARE_MM} × {FIXED_SQUARE_MM} mm.</small>{background && <div className="button-row"><Button variant="secondary" onClick={() => void recolorText(background)}><Wand2 size={15} /> Re-fit text colours</Button><button type="button" className="subtle-link" onClick={() => { setBackground(""); setSaved(false); }}>Remove template</button></div>}<label className="checkbox-line"><input type="checkbox" checked={previewLongest} onChange={event => setPreviewLongest(event.target.checked)} /> Preview the longest participant name</label><Button onClick={() => setTab("design")}>Continue to design <ArrowRight size={16} /></Button></div><div className="setup-card-preview"><span className="eyebrow">LIVE PREVIEW</span><DesignCanvas elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={sample} memberNumber={1} width={canvasWidth} height={canvasHeight} /></div></div>}
     {tab === "design" && <div className="editor-layout"><div className="editor-work"><div className="editor-work-top"><span>DESIGN CANVAS <small>{config.width} × {config.height} MM</small></span><div><button aria-label="Undo" disabled={!designer.canUndo} onClick={designer.undo}><Undo2 size={17} /></button><button aria-label="Redo" disabled={!designer.canRedo} onClick={designer.redo}><Redo2 size={17} /></button><button aria-label="Zoom out" onClick={() => setZoom(Math.max(50, zoom - 10))}><ZoomOut size={17} /></button><span>{zoom}%</span><button aria-label="Zoom in" onClick={() => setZoom(Math.min(150, zoom + 10))}><ZoomIn size={17} /></button></div></div><div className="editor-work-area"><div style={{ transform: `scale(${zoom / 100})`, transformOrigin: "center" }}><DesignCanvas canvasRef={canvasRef} editable selectedId={designer.selectedId} onSelect={designer.setSelectedId} onDragStart={designer.snapshot} onMove={(elementId, x, y) => changeElement(elementId, { x, y }, false)} onImageZoom={(elementId, value) => changeElement(elementId, { zoom: value }, false)} elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={sample} memberNumber={1} width={canvasWidth} height={canvasHeight} /></div></div><p className="editor-tip">Drag a field to move it. Scroll over a photo to adjust its fit. Each QR code opens that member's own login.</p></div><aside className="editor-tools"><div className="tool-group"><span className="eyebrow">CARD FIELDS</span><div className="field-buttons">{cardFields.map(field => <button key={field.kind} onClick={() => { designer.add(field.kind, undefined, config); setSaved(false); }}><Plus size={14} /> {field.label}</button>)}</div><label className="upload-inline"><ImagePlus size={16} /> Import logo or image<input type="file" accept="image/*" hidden onChange={event => void addImage(event.target.files?.[0])} /></label></div><Inspector element={selected} onUpdate={patch => { if (selected) changeElement(selected.id, patch); }} onRemove={() => { if (selected) designer.remove(selected.id); }} /></aside></div>}
-    {tab === "sheet" && <div className="sheet-preview-layout"><div className="print-settings"><span className="eyebrow">PRINT SETUP</span><h3>Ready for the printer.</h3><div className="form-grid"><Field label="Margin mm"><input type="number" min="0" max="50" value={config.margin} onChange={event => changeConfig({ margin: Number(event.target.value) })} /></Field><Field label="Gap mm"><input type="number" min="0" max="50" value={config.gap} onChange={event => changeConfig({ gap: Number(event.target.value) })} /></Field></div><label className="checkbox-line"><input type="checkbox" checked={config.cropMarks} onChange={event => changeConfig({ cropMarks: event.target.checked })} /> Crop marks</label><label className="checkbox-line"><input type="checkbox" checked={config.newTeamPage} onChange={event => changeConfig({ newTeamPage: event.target.checked })} /> Start each team on a new page</label><p className="muted small-text">Every QR code links to that member's own login. Save the design before downloading.</p>{!fitsOnPaper && <p className="warn-text">This card is bigger than the chosen paper. Reduce the card size or margin.</p>}<Button onClick={() => void downloadCards()} disabled={!data.members.length || !fitsOnPaper}><Download size={16} /> Download ID cards</Button></div><div className="a4-area"><div className="a4-top"><span>Sheet preview ({config.paper || "A4 portrait"})</span><small>{paper.width} × {paper.height} mm · {perPage} per page · {Math.max(1, Math.ceil(data.members.length / perPage))} page{Math.ceil(data.members.length / perPage) === 1 ? "" : "s"}</small></div><div className="a4-sheet" style={{ width: paper.width * previewScale, height: paper.height * previewScale, padding: config.margin * previewScale, gap: config.gap * previewScale }}>{data.members.slice(0, perPage).map((member, index) => <div key={member.id} className="a4-card"><DesignCanvas elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={member} memberNumber={index + 1} width={config.width * previewScale} height={config.height * previewScale} /></div>)}</div><span className="muted small-text">Showing page one of the real layout. All {data.members.length} members are included in the PDF.</span></div><div className="export-cards" aria-hidden="true">{data.members.map((member, index) => <div key={member.id} data-card-export><DesignCanvas elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={member} memberNumber={index + 1} width={config.width * 4} height={config.height * 4} /></div>)}</div></div>}
+    {tab === "sheet" && <div className="sheet-preview-layout"><div className="print-settings"><span className="eyebrow">PRINT SETUP</span><h3>Ready for the printer.</h3><div className="form-grid"><Field label="Margin mm"><input type="number" min="0" max="50" value={config.margin} onChange={event => changeConfig({ margin: Number(event.target.value) })} /></Field><Field label="Gap mm"><input type="number" min="0" max="50" value={config.gap} onChange={event => changeConfig({ gap: Number(event.target.value) })} /></Field></div><label className="checkbox-line"><input type="checkbox" checked={config.cropMarks} onChange={event => changeConfig({ cropMarks: event.target.checked })} /> Crop marks</label><label className="checkbox-line"><input type="checkbox" checked={config.newTeamPage} onChange={event => changeConfig({ newTeamPage: event.target.checked })} /> Start each team on a new page</label><p className="muted small-text">Every QR code links to that member's own login. Save the design before downloading.</p>{!fitsOnPaper && <p className="warn-text">This card is bigger than the chosen paper. Reduce the card size or margin.</p>}<Button onClick={startCardDownload} disabled={!data.members.length || !fitsOnPaper}><Download size={16} /> Download ID cards</Button></div><div className="a4-area"><div className="a4-top"><span>Sheet preview ({config.paper || "A4 portrait"})</span><small>{paper.width} × {paper.height} mm · {perPage} per page · {pages.length} page{pages.length === 1 ? "" : "s"}</small></div><div className="a4-sheet" style={{ width: paper.width * previewScale, height: paper.height * previewScale, padding: config.margin * previewScale, gap: config.gap * previewScale }}>{(pages[0] ?? []).map(member => <div key={member.id} className="a4-card"><DesignCanvas elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={member} memberNumber={chestNumber(member)} width={config.width * previewScale} height={config.height * previewScale} /></div>)}</div><span className="muted small-text">Showing page one of the real layout. All {data.members.length} members are included in the PDF.</span></div></div>}
+    {(tab === "sheet" || downloadOpen) && <div className="export-cards" ref={exportRef} aria-hidden="true">{pages.flat().map(member => <div key={member.id} data-card-export><DesignCanvas elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={member} memberNumber={chestNumber(member)} width={config.width * 4} height={config.height * 4} /></div>)}</div>}
+    {downloadOpen && <DownloadPreview title="ID card preview" subtitle={`${data.members.length} cards · ${pages.length} page${pages.length === 1 ? "" : "s"} · ${config.paper || "A4 portrait"}`} format={`PDF · ${paper.width} × ${paper.height} mm`} onClose={() => setDownloadOpen(false)} onConfirm={confirmCardDownload}>
+      <div className="card-download-pages">
+        {pages.slice(0, 2).map((page, pageIndex) => <div key={pageIndex} className="card-download-page"><span className="eyebrow">PAGE {pageIndex + 1} OF {pages.length}</span><div className="a4-sheet" style={{ width: paper.width * modalScale, height: paper.height * modalScale, padding: config.margin * modalScale, gap: config.gap * modalScale }}>{page.map(member => <div key={member.id} className="a4-card"><DesignCanvas elements={designer.elements} background={background} data={data} festName={fest.name} festCode={fest.code} member={member} memberNumber={chestNumber(member)} width={config.width * modalScale} height={config.height * modalScale} /></div>)}</div></div>)}
+        {pages.length > 2 && <p className="muted small-text">+ {pages.length - 2} more page{pages.length - 2 === 1 ? "" : "s"} included in the PDF.</p>}
+      </div>
+    </DownloadPreview>}
 
   </>;
 }

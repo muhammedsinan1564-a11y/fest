@@ -1,5 +1,3 @@
-import { toPng } from "html-to-image";
-import { jsPDF } from "jspdf";
 import { entryGrade, entryMark, getCategoryName, getMemberName, getTeamName, type Fest, type FestData, type Member, type Program, type ProgramEntry, type Section, type UserRecord } from "../types";
 
 export interface SectionProps {
@@ -61,19 +59,5 @@ export function reportRows(program: Program, data: FestData, teamId?: string) {
 
 export function categoryAndProgram(program: Program, data: FestData) { return `${getCategoryName(data, program.categoryId)} / ${program.name}`; }
 
-export async function downloadNodePdf(node: HTMLElement, filename: string, widthMm = 210, heightMm = 297) {
-  const captureWidth = Math.max(node.clientWidth, node.scrollWidth);
-  const captureHeight = Math.max(node.clientHeight, node.scrollHeight);
-  const png = await toPng(node, { pixelRatio: 2, cacheBust: true, backgroundColor: "#ffffff", width: captureWidth, height: captureHeight, style: { width: `${captureWidth}px`, height: `${captureHeight}px`, maxHeight: "none", overflow: "visible" } });
-  const image = new Image();
-  image.src = png;
-  await image.decode();
-  const pdf = new jsPDF({ orientation: widthMm > heightMm ? "landscape" : "portrait", unit: "mm", format: [widthMm, heightMm] });
-  const renderedHeight = widthMm * image.naturalHeight / image.naturalWidth;
-  const pages = Math.max(1, Math.ceil(renderedHeight / heightMm));
-  for (let page = 0; page < pages; page++) {
-    if (page) pdf.addPage([widthMm, heightMm], widthMm > heightMm ? "landscape" : "portrait");
-    pdf.addImage(png, "PNG", 0, -page * heightMm, widthMm, renderedHeight);
-  }
-  pdf.save(filename);
-}
+// Every download goes through the shared exporter (font-safe, mobile-safe).
+export { downloadNodePdf } from "../lib/exporter";

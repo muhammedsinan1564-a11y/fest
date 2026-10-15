@@ -2,6 +2,7 @@ import { motion, useMotionValue, useSpring, useTransform, type MotionValue } fro
 import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Globe, IdCard, KeyRound, ListChecks, Minus, MonitorSpeaker, Play, Plus, Printer, ShieldCheck, Users, UsersRound, Eye, EyeOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { readTheme } from "./lib/theme";
+import { FestizeLogo } from "./FestizeLogo";
 
 const PAIN_POINTS = [
   { icon: "❌", name: "Spreadsheet Chaos", text: "Formulas break, sheets get accidentally overwritten, and nobody knows which version is the true final tally." },
@@ -74,7 +75,7 @@ function Constellation() {
     let frame = 0; let time = 0;
     const seed = () => {
       const width = canvas.clientWidth; const height = canvas.clientHeight;
-      const count = Math.round(Math.min(120, Math.max(38, width * height / 14000)));
+      const count = Math.round(Math.min(240, Math.max(76, width * height / 7000)));
       dots = Array.from({ length: count }, () => ({ x: Math.random() * width, y: Math.random() * height, vx: (Math.random() - .5) * .38, vy: (Math.random() - .5) * .38, r: Math.random() * 1.6 + .6, phase: Math.random() * Math.PI * 2 }));
     };
     const resize = () => {
@@ -145,10 +146,10 @@ const HERO_CHIPS = [
   { className: "chip-d", depth: 24, kicker: "NORTH HOUSE", title: "+18 points", detail: "Climbs to rank 01" },
 ];
 
-function FloatingChip({ chip, mx, my, index }: { chip: typeof HERO_CHIPS[number]; mx: MotionValue<number>; my: MotionValue<number>; index: number }) {
+function FloatingChip({ chip, mx, my, index, ready }: { chip: typeof HERO_CHIPS[number]; mx: MotionValue<number>; my: MotionValue<number>; index: number; ready: boolean }) {
   const x = useTransform(mx, value => value * chip.depth);
   const y = useTransform(my, value => value * chip.depth);
-  return <motion.div className={`hero-chip ${chip.className}`} style={{ x, y }} initial={{ opacity: 0, scale: .9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 1.1 + index * .15, duration: .7 }} aria-hidden="true">
+  return <motion.div className={`hero-chip ${chip.className}`} style={{ x, y }} initial={{ opacity: 0, scale: .9 }} animate={ready ? { opacity: 1, scale: 1 } : { opacity: 0, scale: .9 }} transition={{ delay: ready ? .75 + index * .13 : 0, duration: .7 }} aria-hidden="true">
     <div className="hero-chip-float" style={{ animationDelay: `${index * -1.6}s` }}><span>{chip.kicker}</span><strong>{chip.title}</strong><small>{chip.detail}</small></div>
   </motion.div>;
 }
@@ -169,10 +170,30 @@ const NAV_LINKS = [
 
 const scrollToSection = (target: string) => document.getElementById(target)?.scrollIntoView({ behavior: "smooth" });
 
-export function Landing({ onExplore, onJoin }: { onExplore: () => void; onJoin: () => void }) {
+const EASE_OUT = [.2, .8, .2, 1] as const;
+
+/**
+ * `introActive`: the opening intro is still covering this screen, so hold the
+ * entrance animations until it hands over.
+ * `logoHandoff`: the intro's logo just landed exactly on the hero logo, so the
+ * hero logo appears instantly instead of animating in.
+ */
+export function Landing({ onExplore, onJoin, introActive = false, logoHandoff = false }: { onExplore: () => void; onJoin: () => void; introActive?: boolean; logoHandoff?: boolean }) {
+  const ready = !introActive;
   const landingRef = useRef<HTMLDivElement>(null);
+  const brandRef = useRef<HTMLHeadingElement>(null);
+  const [brandInView, setBrandInView] = useState(true);
   const rawX = useMotionValue(0); const rawY = useMotionValue(0);
   const mx = useSpring(rawX, { stiffness: 60, damping: 18 }); const my = useSpring(rawY, { stiffness: 60, damping: 18 });
+
+  // The nav wordmark stays out of the way while the big hero brand is on screen.
+  useEffect(() => {
+    const brand = brandRef.current;
+    if (!brand || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setBrandInView(entry.isIntersecting), { rootMargin: "-68px 0px 0px 0px" });
+    observer.observe(brand);
+    return () => observer.disconnect();
+  }, []);
 
   // Lock the first screen to Obsidian Gold. The visitor's own theme choice stays
   // saved and is restored as soon as they leave this screen.
@@ -194,30 +215,36 @@ export function Landing({ onExplore, onJoin }: { onExplore: () => void; onJoin: 
       <div className="hero-spotlight" />
       <Constellation />
     </div>
-    <header className="fest-nav">
-      <button className="wordmark small" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Festize home">festize<span>.</span></button>
+    <motion.header className="fest-nav" initial={{ opacity: 0, y: -14 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: -14 }} transition={{ duration: .6, delay: ready ? .15 : 0, ease: EASE_OUT }}>
+      <button className={`wordmark small nav-brand${brandInView ? " is-hidden" : ""}`} tabIndex={brandInView ? -1 : 0} aria-hidden={brandInView || undefined} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Festize home"><FestizeLogo className="nav-logo" title={null} />festize<span>.</span></button>
       <nav className="fest-nav-links" aria-label="Page sections">
         {NAV_LINKS.map(link => <button key={link.target} onClick={() => scrollToSection(link.target)}>{link.label}</button>)}
       </nav>
-    </header>
-    <section className="dark-hero">
+    </motion.header>
+    <section className="dark-hero hero-left">
       <div className="dark-hero-glow" aria-hidden="true" />
-      {HERO_CHIPS.map((chip, index) => <FloatingChip key={chip.className} chip={chip} mx={mx} my={my} index={index} />)}
+      {HERO_CHIPS.map((chip, index) => <FloatingChip key={chip.className} chip={chip} mx={mx} my={my} index={index} ready={ready} />)}
       <div className="dark-hero-content">
-        <motion.span className="hero-badge" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .6 }}><span className="badge-dot" /> SCHOOL ARTS &amp; CULTURAL FEST SOFTWARE</motion.span>
-        <h1 aria-label="Run your fest without chasing spreadsheets, score sheets and stage updates.">
-          {HEADLINE.map((word, index) => <span className="word-wrap" key={`${word.text}-${index}`} aria-hidden="true">
-            <motion.span className={`word ${word.tone ? `word-${word.tone} shimmer` : ""}`} initial={{ y: "105%", opacity: 0, filter: "blur(10px)" }} animate={{ y: "0%", opacity: 1, filter: "blur(0px)" }} transition={{ delay: .2 + index * .07, duration: .75, ease: [.2, .8, .2, 1] }}>{word.text}</motion.span>
-          </span>)}
+        <motion.span className="hero-badge" initial={{ opacity: 0, y: -12 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: -12 }} transition={{ duration: .6, delay: ready ? .28 : 0 }}><span className="badge-dot" /> SCHOOL ARTS &amp; CULTURAL FEST SOFTWARE</motion.span>
+        <h1 className="hero-brand" ref={brandRef}>
+          {/* The intro's logo lands exactly here, so this one stays hidden until the hand-over. */}
+          <span id="hero-logo" className={`hero-logo-slot${ready && !logoHandoff ? " pop-in" : ""}`} style={{ opacity: introActive ? 0 : 1 }} aria-hidden="true"><FestizeLogo title={null} /></span>
+          <motion.span className="hero-wordmark-big" initial={{ opacity: 0, scale: 1.12, filter: "blur(12px)" }} animate={ready ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 1.12, filter: "blur(12px)" }} transition={{ duration: .75, delay: ready ? (logoHandoff ? .02 : .14) : 0, ease: EASE_OUT }}>festize<span>.</span></motion.span>
         </h1>
-        <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.05, duration: .7 }}>Set up participants and programs, keep stages moving, collect judges' marks with zero bias, and publish approved results in one unified place. From 50 to 5,000 participants — run your festival with complete confidence.</motion.p>
-        <motion.div className="dark-hero-ctas" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.25, duration: .7 }}>
+        <p className="hero-tagline">
+          <span className="sr-only">Run your fest without chasing spreadsheets, score sheets and stage updates.</span>
+          {HEADLINE.map((word, index) => <span className="word-wrap" key={`${word.text}-${index}`} aria-hidden="true">
+            <motion.span className={`word ${word.tone ? `word-${word.tone} shimmer` : ""}`} initial={{ y: "105%", opacity: 0 }} animate={ready ? { y: "0%", opacity: 1 } : { y: "105%", opacity: 0 }} transition={{ delay: ready ? .42 + index * .045 : 0, duration: .6, ease: EASE_OUT }}>{word.text}</motion.span>
+          </span>)}
+        </p>
+        <motion.p className="hero-sub" initial={{ opacity: 0, y: 16 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }} transition={{ delay: ready ? .92 : 0, duration: .7 }}>Set up participants and programs, keep stages moving, collect judges' marks with zero bias, and publish approved results in one unified place. From 50 to 5,000 participants — run your festival with complete confidence.</motion.p>
+        <motion.div className="dark-hero-ctas" initial={{ opacity: 0, y: 16 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }} transition={{ delay: ready ? 1.06 : 0, duration: .7 }}>
           <button className="cta-gold" onClick={onExplore}><span className="cta-sheen" aria-hidden="true" /><Play size={15} fill="currentColor" /> Explore Platform</button>
           <button className="cta-outline" onClick={() => scrollToSection("workflow")}><ChevronDown size={16} /> How It Works</button>
         </motion.div>
-        <motion.span className="hero-footnote" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: .8 }}>Evaluation is permanently free · Offline-first architecture · Instant real-time sync</motion.span>
+        <motion.span className="hero-footnote" initial={{ opacity: 0 }} animate={{ opacity: ready ? 1 : 0 }} transition={{ delay: ready ? 1.25 : 0, duration: .8 }}>Evaluation is permanently free · Offline-first architecture · Instant real-time sync</motion.span>
       </div>
-      <button className="scroll-cue" onClick={() => scrollToSection("control-room")} aria-label="Scroll to learn more"><span /></button>
+      <motion.button className="scroll-cue" initial={{ opacity: 0 }} animate={{ opacity: ready ? 1 : 0 }} transition={{ delay: ready ? 1.45 : 0, duration: .6 }} onClick={() => scrollToSection("control-room")} aria-label="Scroll to learn more"><span /></motion.button>
     </section>
     <DarkSections onJoin={onJoin} />
   </div>;
@@ -270,7 +297,7 @@ function DarkSections({ onJoin }: { onJoin: () => void }) {
       <div className="faq-list">{FAQS.map((faq, index) => <Reveal key={faq.question} delay={index * .04}><div className={`faq-item ${faqOpen === index ? "open" : ""}`}><button className="faq-question" aria-expanded={faqOpen === index} onClick={() => setFaqOpen(faqOpen === index ? -1 : index)}>{faq.question}<span>{faqOpen === index ? <Minus size={17} /> : <Plus size={17} />}</span></button>{faqOpen === index && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="faq-answer">{faq.answer}</motion.p>}</div></Reveal>)}</div>
     </section>
 
-    <footer className="dark-footer"><span className="wordmark">festize<span>.</span></span><span>Let the good things happen.</span><button onClick={onJoin}>Have a fest? <ArrowRight size={16} /></button></footer>
+    <footer className="dark-footer"><span className="footer-brand"><FestizeLogo className="footer-logo" title={null} /><span className="wordmark">festize<span>.</span></span></span><span>Let the good things happen.</span><button onClick={onJoin}>Have a fest? <ArrowRight size={16} /></button></footer>
   </div>;
 }
 

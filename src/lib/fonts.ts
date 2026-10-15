@@ -117,13 +117,14 @@ export function loadFonts(names: string[]) {
   if (typeof document === "undefined") return;
   const pending = [...new Set(names)].filter(name => name && !SYSTEM_FONTS.includes(name) && !requested.has(name));
   if (!pending.length) return;
-  pending.forEach(name => requested.add(name));
-  // Chunked so one very long URL cannot fail the whole request.
-  for (let index = 0; index < pending.length; index += 12) {
-    const chunk = pending.slice(index, index + 12);
+  // One request per family, default weight only. Google's css2 API rejects a whole
+  // request if any family lacks a requested weight (e.g. single-weight display
+  // fonts), so batching or listing weights would silently drop many fonts.
+  pending.forEach(name => {
+    requested.add(name);
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = `https://fonts.googleapis.com/css2?${chunk.map(name => `family=${encodeURIComponent(name).replace(/%20/g, "+")}:wght@400;500;600;700`).join("&")}&display=swap`;
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name).replace(/%20/g, "+")}&display=swap`;
     document.head.appendChild(link);
-  }
+  });
 }

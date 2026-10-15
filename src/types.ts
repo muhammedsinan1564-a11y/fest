@@ -5,7 +5,7 @@ export type Section =
   | "Program Control" | "Stages" | "Stage Control" | "Schedule" | "Judgement"
   | "Team Marks" | "Grade Points" | "ID Card Setup" | "Printouts" | "Code Letter Entry"
   | "Results" | "Public Team Scores" | "Random Picker" | "Random Letter"
-  | "Poster Templates" | "Top Candidates" | "Monitor" | "Media" | "Bell" | "Settings";
+  | "Poster Templates" | "Top Candidates" | "Monitor" | "Media" | "Bell" | "Settings" | "Stopwatch";
 
 export interface UserRecord {
   id: string;
@@ -60,7 +60,10 @@ export interface Program {
   entries: ProgramEntry[];
   status: number;
   resultNumber?: number;
+  /** Set by the Monitor section. A program cannot be published until this is true. */
   monitorConfirmed?: boolean;
+  /** When the monitor confirmed it; confirmed results are listed oldest → newest at the bottom. */
+  monitorConfirmedAt?: string;
   createdBy?: string;
 }
 

@@ -51,3 +51,36 @@ export function accentRgb(): string {
   const value = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb").trim();
   return value || "217,169,79";
 }
+
+type ViewTransition = { ready: Promise<void>; finished: Promise<void> };
+
+/**
+ * Reveals a theme change as a circular wave growing out from the clicked button.
+ * Uses the View Transition API when available, with a DOM-circle fallback.
+ */
+export function waveThemeChange(source: Element, change: () => void, fallbackColor?: string) {
+  const rect = source.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const root = document.documentElement;
+  root.style.setProperty("--theme-wave-x", `${x}px`);
+  root.style.setProperty("--theme-wave-y", `${y}px`);
+  root.style.setProperty("--theme-wave-r", `${radius}px`);
+  const api = (document as Document & { startViewTransition?: (callback: () => void) => ViewTransition }).startViewTransition;
+  if (api && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const transition = api.call(document, change);
+    void transition.ready.then(() => root.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 650, easing: "cubic-bezier(.2,.75,.2,1)", pseudoElement: "::view-transition-new(root)" },
+    ));
+    return;
+  }
+  const wave = document.createElement("div");
+  wave.className = "theme-wave-fallback";
+  wave.style.cssText = `left:${x}px;top:${y}px;width:${radius * 2}px;height:${radius * 2}px;background:${fallbackColor || "#111"}`;
+  document.body.appendChild(wave);
+  change();
+  requestAnimationFrame(() => wave.classList.add("go"));
+  setTimeout(() => wave.remove(), 720);
+}

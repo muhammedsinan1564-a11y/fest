@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Fest, FestData, UserRecord } from "../types";
+import { hydrateFestData, type Fest, type FestData, type UserRecord } from "../types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -45,7 +45,7 @@ function safeData(data: FestData): FestData {
 function rowToFest(row: Record<string, unknown>, payload: FestData | undefined): Fest {
   return {
     id: String(row.id), name: String(row.name), code: String(row.code), date: String(row.date), ownerId: String(row.owner_id),
-    mainUsers: (row.main_users as UserRecord[] || []).map(safeUser), data: payload || ({} as FestData),
+    mainUsers: (row.main_users as UserRecord[] || []).map(safeUser), data: hydrateFestData(payload),
   };
 }
 

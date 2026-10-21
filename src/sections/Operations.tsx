@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Check, ChevronRight, CornerUpLeft, Eye, Lock } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, CornerUpLeft, Dices, Eye, Lock, Save } from "lucide-react";
 import { Button, Empty, PageHead, SearchInput, StatusBadge, useViewPref, ViewToggle } from "../ui";
 import { entryGrade, getCategoryName, getGrade, programReadyForJudgement, STATUSES, type Program } from "../types";
 import { activeJudgesFor, isolatedViewForJudge, scoringMethodFor } from "../lib/fast";
 import { canManage, entryDisplay, rankedEntries, type SectionProps } from "./common";
+
+/** One random code letter from the unambiguous alphabet (no I or O). */
+const randomLetter = () => "ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.floor(Math.random() * 24)];
 
 function ControlRow({ program, data, onNext, onUndo, canUpdate }: { program: Program; data: SectionProps["fest"]["data"]; onNext: () => void; onUndo: () => void; canUpdate: boolean }) {
   // Publishing is locked until the Monitor section confirms the result.
@@ -50,20 +53,80 @@ export function ControlSection({ fest, user, onChange, notify, stageOnly = false
 }
 
 export function CodeLetterSection({ fest, onChange, notify }: SectionProps) {
-  const data = fest.data; const [query, setQuery] = useState(""); const [activeId, setActiveId] = useState<string | null>(null); const [codes, setCodes] = useState<Record<string, string>>({});
+  const data = fest.data;
+  const [query, setQuery] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [codes, setCodes] = useState<Record<string, string>>({});
+  const [spinning, setSpinning] = useState(false);
   const active = data.programs.find(program => program.id === activeId);
   const waiting = data.programs.filter(program => program.status === 0 && (!query || `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase())));
-  const open = (program: Program) => { setCodes(Object.fromEntries(program.entries.map(entry => [entry.id, entry.codeLetter || ""]))); setActiveId(program.id); };
+  const open = (program: Program) => {
+    setCodes(Object.fromEntries(program.entries.map(entry => [entry.id, entry.codeLetter || ""])));
+    setActiveId(program.id);
+  };
+
+  /**
+   * Spin letters: one random, unique code letter per candidate in this program.
+   * The number of letters drawn always matches the number of members (entries),
+   * and a group receives a single letter like every other candidate.
+   */
+  const spinLetters = () => {
+    if (!active || !active.entries.length) return notify("Add candidates before drawing code letters.");
+    const count = active.entries.length;
+    const pool = "ABCDEFGHJKLMNPQRSTUVWXYZ".split("");
+    const twoLetter = pool.flatMap(first => pool.map(second => `${first}${second}`));
+    const drawn = [...pool, ...twoLetter].slice(0, count);
+    for (let index = drawn.length - 1; index > 0; index--) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [drawn[index], drawn[swap]] = [drawn[swap], drawn[index]];
+    }
+    setSpinning(true);
+    setCodes(Object.fromEntries(active.entries.map((entry, index) => [entry.id, drawn[index]])));
+    window.setTimeout(() => setSpinning(false), 380);
+    notify(`Drew ${count} unique code letter${count === 1 ? "" : "s"}.`);
+  };
+
   const save = () => {
     if (!active || !active.entries.length) return notify("Add candidates before assigning code letters.");
     const values = active.entries.map(entry => codes[entry.id]?.trim().toUpperCase());
     if (values.some(value => !value)) return notify("Give every candidate a code letter before confirming.");
     if (new Set(values).size !== values.length) return notify("Use a different code letter for every candidate.");
     onChange(next => ({ ...next, programs: next.programs.map(program => program.id === active.id ? { ...program, entries: program.entries.map(entry => ({ ...entry, codeLetter: codes[entry.id]?.trim().toUpperCase() })), status: 1 } : program) }), `Code letters completed for ${active.name}; program started`);
-    setActiveId(null); notify(`${active.name} started automatically after code letter entry`);
+    setActiveId(null);
+    notify(`${active.name} started automatically after code letter entry`);
   };
-  if (active) return <><PageHead back={() => setActiveId(null)} eyebrow="LIVE / CODE LETTERS" title={active.name} description="Give every candidate a unique code letter. A group receives one letter." /><div className="sheet-container"><div className="sheet-header"><span>CANDIDATE</span><span>CODE LETTER</span></div>{active.entries.map(entry => <div key={entry.id} className="code-row"><div><strong>{entryDisplay(active, entry, data)}</strong><small>{getCategoryName(data, active.categoryId)}</small></div><input aria-label={`Code letter for ${entryDisplay(active, entry, data)}`} value={codes[entry.id] || ""} onChange={event => setCodes({ ...codes, [entry.id]: event.target.value.toUpperCase() })} placeholder="Enter code letter" /></div>)}<div className="sheet-footer"><Button onClick={save}>Confirm all code letters <ArrowRight size={16} /></Button></div></div></>;
-  return <><PageHead eyebrow="LIVE / ANONYMITY" title="Code Letter Entry" description="Assign anonymous codes when candidates report in." /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search reporting programs" /><span className="toolbar-count">{waiting.length} awaiting entry</span></div>{waiting.length ? <div className="click-list">{waiting.map(program => <button key={program.id} onClick={() => open(program)}><div><span className="eyebrow">{getCategoryName(data, program.categoryId)}</span><h3>{program.name}</h3><p>{program.entries.length} candidates waiting for code letters</p></div><ChevronRight size={20} /></button>)}</div> : <Empty title="All code letters are caught up" description="Programs will appear here when they reach Reporting." />}</>;
+
+  if (active) return <>
+    <PageHead
+      back={() => setActiveId(null)}
+      eyebrow="LIVE / CODE LETTERS"
+      title={active.name}
+      description="Draw a random code letter for every candidate, then save to send this program on."
+      action={<div className="button-row">
+        <Button variant="secondary" onClick={spinLetters} icon={<Dices size={16} />}>Spin letter</Button>
+        <Button onClick={save} icon={<Save size={16} />}>Save</Button>
+      </div>}
+    />
+    <div className={`sheet-container ${spinning ? "is-spinning" : ""}`}>
+      <div className="sheet-header"><span>CANDIDATE</span><span>CODE LETTER</span></div>
+      {active.entries.map(entry => <div key={entry.id} className="code-row">
+        <div><strong>{entryDisplay(active, entry, data)}</strong><small>{getCategoryName(data, active.categoryId)}</small></div>
+        <div className="code-field">
+          <input
+            aria-label={`Code letter for ${entryDisplay(active, entry, data)}`}
+            value={codes[entry.id] || ""}
+            onChange={event => setCodes({ ...codes, [entry.id]: event.target.value.toUpperCase() })}
+            placeholder="Enter code letter"
+          />
+          <button type="button" className="code-spin" title="Spin this letter" aria-label={`Spin code letter for ${entryDisplay(active, entry, data)}`} onClick={() => setCodes({ ...codes, [entry.id]: randomLetter() })}>
+            <Dices size={15} />
+          </button>
+        </div>
+      </div>)}
+      <div className="sheet-footer"><Button onClick={save} icon={<Save size={16} />}>Save and continue</Button></div>
+    </div>
+  </>;
+  return <><PageHead eyebrow="LIVE / ANONYMITY" title="Code Letter Entry" description="Open a program, spin the code letters, then save to send it on to judging." /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search reporting programs" /><span className="toolbar-count">{waiting.length} awaiting entry</span></div>{waiting.length ? <div className="click-list">{waiting.map(program => <button key={program.id} onClick={() => open(program)}><div><span className="eyebrow">{getCategoryName(data, program.categoryId)}</span><h3>{program.name}</h3><p>{program.entries.length} candidates waiting for code letters</p></div><ChevronRight size={20} /></button>)}</div> : <Empty title="All code letters are caught up" description="Programs will appear here when they reach Reporting." />}</>;
 }
 
 /**

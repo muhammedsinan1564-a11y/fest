@@ -149,7 +149,7 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
   </>;
 }
 
-const staffRoles: Role[] = ["JUDGE", "MEDIA", "TEAM MANAGER", "MONITOR", "STAGE MANAGER"];
+const staffRoles: Role[] = ["JUDGE", "MEDIA", "TEAM MANAGER", "MONITOR", "STAGE MANAGER", "PUBLIC RESULT", "QUIZ MASTER"];
 export function AccessSection({ fest, user, onChange, onProvision, notify }: SectionProps) {
   const data = fest.data; const [query, setQuery] = useState(""); const [open, setOpen] = useState(false); const [editing, setEditing] = useState<UserRecord | null>(null); const [viewing, setViewing] = useState<UserRecord | null>(null); const [name, setName] = useState(""); const [role, setRole] = useState<Role>("JUDGE"); const [teamId, setTeamId] = useState(""); const [showPassword, setShowPassword] = useState<string | null>(null);
   const save = (event: FormEvent) => {
@@ -157,14 +157,15 @@ export function AccessSection({ fest, user, onChange, onProvision, notify }: Sec
     if (!editing && !canAdd(fest, "users")) return notify(limitMessage("users"));
     if ([...data.users, ...fest.mainUsers, ...data.members].some(item => item.name.toLowerCase() === name.trim().toLowerCase() && item.id !== editing?.id)) return notify("That username is already taken.");
     if (role === "TEAM MANAGER" && !teamId) return notify("Select a team for the team manager.");
-    const staff: UserRecord = { id: editing?.id || id(), name: name.trim(), role, teamId: role === "TEAM MANAGER" ? teamId : undefined, password: editing ? editing.password : randomPassword(), createdBy: user.id };
-    onChange(next => ({ ...next, users: editing ? next.users.map(item => item.id === editing.id ? staff : item) : [...next.users, staff] }), `${editing ? "Updated" : "Added"} user ${staff.name}`);
+    const existingPublicPassword = editing?.role === "PUBLIC RESULT" ? data.publicResultCredentials?.password : undefined;
+    const staff: UserRecord = { id: editing?.id || id(), name: name.trim(), role, teamId: role === "TEAM MANAGER" ? teamId : undefined, password: editing ? editing.password || existingPublicPassword || "" : randomPassword(), createdBy: user.id };
+    onChange(next => ({ ...next, users: editing ? next.users.map(item => item.id === editing.id ? staff : item) : [...next.users, staff], publicResultCredentials: role === "PUBLIC RESULT" && staff.password ? { username: staff.name, password: staff.password } : next.publicResultCredentials }), `${editing ? "Updated" : "Added"} user ${staff.name}`);
     void onProvision(staff, editing ? "update" : "create");
     setOpen(false); setEditing(null); setShowPassword(staff.id); notify("User saved. Share their credentials securely.");
   };
   const remove = (staff: UserRecord) => {
     if (!confirmDelete(staff.name)) return;
-    onChange(next => ({ ...next, users: next.users.filter(item => item.id !== staff.id), programs: next.programs.map(program => ({ ...program, judgeIds: program.judgeIds.filter(judgeId => judgeId !== staff.id) })) }), `Deleted user ${staff.name}`); notify("User deleted");
+    onChange(next => ({ ...next, users: next.users.filter(item => item.id !== staff.id), programs: next.programs.map(program => ({ ...program, judgeIds: program.judgeIds.filter(judgeId => judgeId !== staff.id) })), publicResultCredentials: staff.role === "PUBLIC RESULT" ? undefined : next.publicResultCredentials }), `Deleted user ${staff.name}`); notify("User deleted");
     void onProvision(staff, "revoke");
   };
   return <><PageHead eyebrow="PEOPLE / ACCESS" title="Access Control" description="The right people, the right part of the fest." action={<AddButton onClick={() => { setEditing(null); setName(""); setRole("JUDGE"); setTeamId(""); setOpen(true); }}>Add user</AddButton>} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search users" /><span className="toolbar-count">{data.users.length} staff accounts</span></div>

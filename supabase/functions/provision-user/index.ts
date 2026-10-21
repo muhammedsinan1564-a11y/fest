@@ -41,7 +41,7 @@ serve(async (request) => {
     const name = String(candidate.name || "").trim();
     const password = String(candidate.password || "");
     const role = String(candidate.role || "");
-    const allowed = ["MAIN", "JUDGE", "MEDIA", "TEAM MANAGER", "MONITOR", "STAGE MANAGER", "MEMBER"];
+    const allowed = ["MAIN", "JUDGE", "MEDIA", "TEAM MANAGER", "MONITOR", "STAGE MANAGER", "MEMBER", "PUBLIC RESULT", "QUIZ MASTER"];
     if (!/^[0-9a-f-]{36}$/i.test(festId)) return reply(400, { error: "Invalid fest ID" });
 
     const { data: fest } = await admin.from("fests").select("id, code, owner_id").eq("id", festId).maybeSingle();

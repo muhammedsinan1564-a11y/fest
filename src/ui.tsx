@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Download, LayoutGrid, List, Plus, Search, X } from "lucide-react";
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
+import { FestizeLogo } from "./FestizeLogo";
+import { printLogoSrc } from "./lib/brand";
 
 /** Step 1 of every download: ask first, exactly like the printouts. */
 export function askToDownload(what: string) {
@@ -123,6 +125,21 @@ export function RowActions({ onView, onEdit, onDelete }: { onView?: () => void; 
 
 export function AddButton({ children = "Add new", onClick }: { children?: ReactNode; onClick: () => void }) {
   return <Button icon={<Plus size={17} />} onClick={onClick}>{children}</Button>;
+}
+
+/** "festize." wordmark with its mark in front — used wherever the name appears. */
+export function Wordmark({ className = "", markSize = "1em" }: { className?: string; markSize?: string | number }) {
+  return <span className={`wordmark-line ${className}`}>
+    <span className="wordmark-logo" style={{ width: markSize, height: markSize } as CSSProperties}><FestizeLogo title={null} /></span>
+    <span className="wordmark">festize<span>.</span></span>
+  </span>;
+}
+
+/** Tiny, recognisable logo at the top-right corner of anything that gets printed. */
+export function PrintLogo({ logo, label = "FESTIZE" }: { logo?: string | null; label?: string }) {
+  return <div className="print-logo" aria-label={`${label} logo`}>
+    <img src={printLogoSrc(logo)} alt="" />
+  </div>;
 }
 
 /** List rows or a 3-in-a-row box grid; the choice is remembered per section and user. */

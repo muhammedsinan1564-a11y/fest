@@ -1,11 +1,12 @@
-export type Role = "MAIN" | "JUDGE" | "MEDIA" | "TEAM MANAGER" | "MONITOR" | "STAGE MANAGER" | "MEMBER";
+export type Role = "MAIN" | "JUDGE" | "MEDIA" | "TEAM MANAGER" | "MONITOR" | "STAGE MANAGER" | "MEMBER" | "PUBLIC RESULT" | "QUIZ MASTER";
 
 export type Section =
   | "Dashboard" | "Access Control" | "Teams" | "Members" | "Categories" | "Programs"
   | "Program Control" | "Stages" | "Stage Control" | "Schedule" | "Judgement"
   | "Team Marks" | "Grade Points" | "ID Card Setup" | "Printouts" | "Code Letter Entry"
-  | "Results" | "Public Team Scores" | "Random Picker" | "Random Letter"
-  | "Poster Templates" | "Top Candidates" | "Monitor" | "Media" | "Bell" | "Settings" | "Stopwatch";
+  | "Results" | "Public Team Scores" | "Random Picker"
+  | "Poster Templates" | "Top Candidates" | "Monitor" | "Media" | "Bell" | "Settings" | "Stopwatch"
+  | "Highlights" | "Prediction" | "Quiz" | "Quiz Builder" | "Quiz Points" | "Quiz Answers";
 
 export interface UserRecord {
   id: string;
@@ -75,6 +76,40 @@ export interface ScheduleCell {
   delayMinutes?: number;
 }
 
+export interface HighlightsData {
+  liveUrl?: string;
+  /** One submitted video URL per stage program. */
+  programUrls: Record<string, string>;
+}
+
+export interface PredictionData {
+  active: boolean;
+  startedAt?: string;
+  closesAt?: string;
+  /** memberId -> predicted teamId */
+  responses: Record<string, string>;
+}
+
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  answerType: "options" | "text";
+  options: string[];
+  /** Compared case-insensitively for text questions. */
+  correctAnswer: string;
+  published: boolean;
+  createdAt: string;
+}
+
+export interface QuizAnswer {
+  id: string;
+  quizId: string;
+  memberId: string;
+  answer: string;
+  correct: boolean;
+  submittedAt: string;
+}
+
 export type ElementKind = "text" | "image" | "name" | "team" | "category" | "number" | "photo" | "qr"
   | "winner" | "runner" | "secondRunner" | "program" | "festival" | "mark" | "winnerPoints" | "runnerPoints" | "secondRunnerPoints";
 
@@ -130,6 +165,14 @@ export interface FestData {
   posters: PosterTemplate[];
   cardDesign: CardDesign;
   publicProgramIds: string[];
+  /** Small fest logo printed at the top-right of every printed/downloaded sheet. */
+  festLogo?: string;
+  /** Public, read-only account credentials embedded in the printable QR. */
+  publicResultCredentials?: { username: string; password: string };
+  highlights: HighlightsData;
+  prediction: PredictionData;
+  quizzes: QuizQuestion[];
+  quizAnswers: QuizAnswer[];
   activity: { id: string; text: string; at: string; userId: string }[];
   settings: { font: string; headingFont: string; accent: string; dark: boolean; bellTone: string; bellDuration: number; bellUnit: "seconds" | "minutes"; bellWarning: number; bellWarningUnit: "seconds" | "minutes"; customTones: { name: string; data: string }[] };
 }
@@ -186,6 +229,9 @@ export function emptyData(): FestData {
   return {
     users: [], teams: [], categories: [], members: [], programs: [], scales: [structuredClone(standardScale), structuredClone(simpleScale)],
     stages: [], slots: [], schedule: [], posters: [], publicProgramIds: [], activity: [],
+    highlights: { programUrls: {} },
+    prediction: { active: false, responses: {} },
+    quizzes: [], quizAnswers: [],
     cardDesign: {
       width: 75, height: 105, orientation: "Portrait", paper: "A4 portrait", margin: 8, gap: 4, cropMarks: false, newTeamPage: false,
       elements: [
@@ -195,6 +241,21 @@ export function emptyData(): FestData {
       ],
     },
     settings: { font: "IBM Plex Mono", headingFont: "Fraunces", accent: "gold", dark: true, bellTone: "School bell", bellDuration: 5, bellUnit: "seconds", bellWarning: 1, bellWarningUnit: "minutes", customTones: [] },
+  };
+}
+
+/** Adds fields introduced in newer app versions without deleting saved fest data. */
+export function hydrateFestData(data: Partial<FestData> | undefined): FestData {
+  const base = emptyData();
+  const source = data || {};
+  return {
+    ...base,
+    ...source,
+    highlights: { ...base.highlights, ...(source.highlights || {}), programUrls: { ...(source.highlights?.programUrls || {}) } },
+    prediction: { ...base.prediction, ...(source.prediction || {}), responses: { ...(source.prediction?.responses || {}) } },
+    quizzes: source.quizzes || [],
+    quizAnswers: source.quizAnswers || [],
+    settings: { ...base.settings, ...(source.settings || {}) },
   };
 }
 
@@ -270,7 +331,10 @@ export function createDemoFest(): Fest {
     { id: "manager-demo", name: "MANAGER07", password: "TEAM123", role: "TEAM MANAGER", teamId: "north" },
     { id: "monitor-demo", name: "MONITOR04", password: "MONITOR123", role: "MONITOR" },
     { id: "media-demo", name: "MEDIA08", password: "MEDIA123", role: "MEDIA" },
+    { id: "public-demo", name: "PUBLICRESULT", password: "PUBLIC123", role: "PUBLIC RESULT" },
+    { id: "quiz-demo", name: "QUIZMASTER", password: "QUIZ123", role: "QUIZ MASTER" },
   ];
+  data.publicResultCredentials = { username: "PUBLICRESULT", password: "PUBLIC123" };
   const makeEntry = (memberId: string, codeLetter?: string, mark?: number): ProgramEntry => ({ id: id(), memberIds: [memberId], teamId: data.members.find(m => m.id === memberId)?.teamId || "north", codeLetter, marks: typeof mark === "number" ? { "judge-demo": mark } : {} });
   data.programs = [
     { id: "solo-song", name: "Solo Song", description: "A solo vocal performance.", categoryId: "junior", maxPerTeam: 2, groupSize: 1, format: "Individual", venue: "Stage", scaleId: "scale-standard", judgeIds: ["judge-demo"], entries: [makeEntry("member-1", "AL", 94), makeEntry("member-2", "BR", 86), makeEntry("member-3", "CT", 75)], status: 5, resultNumber: 1, monitorConfirmed: true },

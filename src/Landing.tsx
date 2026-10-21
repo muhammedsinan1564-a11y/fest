@@ -302,7 +302,7 @@ function DarkSections({ onJoin }: { onJoin: () => void }) {
 }
 
 export function AuthLayout({ children, onBack, eyebrow, title, description }: { children: ReactNode; onBack: () => void; eyebrow: string; title: string; description: string }) {
-  return <div className="auth-screen"><div className="auth-orb auth-orb-one" /><div className="auth-orb auth-orb-two" /><button className="auth-back" onClick={onBack}><ArrowLeft size={18} /> Back</button><div className="auth-brand">festize<span>.</span></div><motion.div className="auth-content" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}</motion.div><div className="auth-foot">A BETTER WAY TO MAKE IT HAPPEN.</div></div>;
+  return <div className="auth-screen"><div className="auth-orb auth-orb-one" /><div className="auth-orb auth-orb-two" /><button className="auth-back" onClick={onBack}><ArrowLeft size={18} /> Back</button><div className="auth-brand"><FestizeLogo className="auth-brand-logo" title={null} />festize<span>.</span></div><motion.div className="auth-content" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}</motion.div><div className="auth-foot">A BETTER WAY TO MAKE IT HAPPEN.</div></div>;
 }
 
 export function PasswordInput({ value, onChange, placeholder = "Enter password" }: { value: string; onChange: (value: string) => void; placeholder?: string }) {

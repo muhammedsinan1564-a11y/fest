@@ -159,20 +159,41 @@ export function downloadBlob(blob: Blob, filename: string) {
 
 export const fileSlug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "festize";
 
+import { loadImage, stampPngTopRight } from "./brand";
+
 /** Downloads a node as a PNG. `targetWidth` is the output width in pixels. */
-export async function downloadNodePng(node: HTMLElement, filename: string, targetWidth = 1080) {
+export async function downloadNodePng(node: HTMLElement, filename: string, targetWidth = 1080, logoSrc?: string | null) {
   const width = node.offsetWidth || 1;
-  const dataUrl = await renderNodePng(node, { pixelRatio: Math.min(6, Math.max(1, targetWidth / width)) });
+  let dataUrl = await renderNodePng(node, { pixelRatio: Math.min(6, Math.max(1, targetWidth / width)) });
+  if (logoSrc) {
+    try { dataUrl = await stampPngTopRight(dataUrl, logoSrc); } catch { /* stamping is best-effort */ }
+  }
   const blob = await (await fetch(dataUrl)).blob();
   downloadBlob(blob, /\.png$/i.test(filename) ? filename : `${filename}.png`);
+}
+
+/**
+ * Stamps the fest logo at the top-right of a PDF page (tiny but recognisable).
+ * The logo is scaled to roughly 18 mm and kept inside the page margin.
+ */
+export function stampPdfPage(pdf: jsPDF, logo: HTMLImageElement, widthMm: number) {
+  const box = Math.min(18, widthMm * 0.13);
+  const scale = Math.min(box / logo.naturalWidth, box / logo.naturalHeight);
+  const width = logo.naturalWidth * scale;
+  const height = logo.naturalHeight * scale;
+  pdf.addImage(logo, "PNG", widthMm - 8 - width, 8, width, height);
 }
 
 /**
  * Downloads a node as a paged PDF. Short sheets are captured once; long ones
  * are rendered page by page so they never exceed mobile canvas limits.
  */
-export async function downloadNodePdf(node: HTMLElement, filename: string, widthMm = 210, heightMm = 297, report?: (message: string) => void) {
+export async function downloadNodePdf(node: HTMLElement, filename: string, widthMm = 210, heightMm = 297, report?: (message: string) => void, logoSrc?: string | null) {
   await waitForAssets(node);
+  let logo: HTMLImageElement | null = null;
+  if (logoSrc) {
+    try { logo = await loadImage(logoSrc); } catch { logo = null; }
+  }
   const captureWidth = Math.max(node.clientWidth, node.scrollWidth, 1);
   const captureHeight = Math.max(node.clientHeight, node.scrollHeight, 1);
   report?.("Preparing fonts…");
@@ -191,6 +212,7 @@ export async function downloadNodePdf(node: HTMLElement, filename: string, width
     for (let page = 0; page < pages; page++) {
       if (page) pdf.addPage([widthMm, heightMm], orientation);
       pdf.addImage(png, "PNG", 0, -page * heightMm, widthMm, renderedHeight);
+      if (logo) stampPdfPage(pdf, logo, widthMm);
     }
   } else {
     for (let page = 0; page < pages; page++) {
@@ -198,6 +220,7 @@ export async function downloadNodePdf(node: HTMLElement, filename: string, width
       const png = await renderNodePng(node, { pixelRatio: ratio, width: captureWidth, height: pageHeightPx, backgroundColor: "#ffffff", style: { ...base, transform: `translateY(-${page * pageHeightPx}px)` }, fontEmbedCSS });
       if (page) pdf.addPage([widthMm, heightMm], orientation);
       pdf.addImage(png, "PNG", 0, 0, widthMm, heightMm);
+      if (logo) stampPdfPage(pdf, logo, widthMm);
     }
   }
   report?.("Saving PDF…");

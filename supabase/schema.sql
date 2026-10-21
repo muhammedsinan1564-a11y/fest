@@ -16,7 +16,7 @@ create table if not exists public.fest_members (
   fest_id uuid not null references public.fests(id) on delete cascade,
   auth_user_id uuid not null references auth.users(id) on delete cascade,
   username text not null,
-  role text not null check (role in ('MAIN', 'JUDGE', 'MEDIA', 'TEAM MANAGER', 'MONITOR', 'STAGE MANAGER', 'MEMBER')),
+  role text not null check (role in ('MAIN', 'JUDGE', 'MEDIA', 'TEAM MANAGER', 'MONITOR', 'STAGE MANAGER', 'MEMBER', 'PUBLIC RESULT', 'QUIZ MASTER')),
   team_id text,
   member_id text,
   created_at timestamptz not null default now(),
@@ -24,6 +24,13 @@ create table if not exists public.fest_members (
 );
 create unique index if not exists fest_members_unique_username on public.fest_members(fest_id, lower(username));
 create index if not exists fest_members_auth_index on public.fest_members(auth_user_id, fest_id);
+
+-- Existing projects need the expanded role constraint too (CREATE TABLE IF NOT
+-- EXISTS does not update an old CHECK constraint).
+alter table public.fest_members drop constraint if exists fest_members_role_check;
+alter table public.fest_members add constraint fest_members_role_check check (
+  role in ('MAIN', 'JUDGE', 'MEDIA', 'TEAM MANAGER', 'MONITOR', 'STAGE MANAGER', 'MEMBER', 'PUBLIC RESULT', 'QUIZ MASTER')
+);
 
 create table if not exists public.fest_snapshots (
   fest_id uuid primary key references public.fests(id) on delete cascade,
@@ -46,7 +53,8 @@ returns boolean language sql stable security definer set search_path = public as
     select 1 from public.fests f where f.id = target_fest and f.owner_id = auth.uid()
   ) or exists (
     select 1 from public.fest_members m
-    where m.fest_id = target_fest and m.auth_user_id = auth.uid() and m.role <> 'MEMBER'
+    where m.fest_id = target_fest and m.auth_user_id = auth.uid()
+      and m.role in ('MAIN', 'JUDGE', 'MEDIA', 'TEAM MANAGER', 'MONITOR', 'STAGE MANAGER', 'QUIZ MASTER')
   );
 $$;
 

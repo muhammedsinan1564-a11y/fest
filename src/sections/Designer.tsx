@@ -3,7 +3,8 @@ import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { ArrowRight, Download, ImagePlus, MoreHorizontal, Plus, Redo2, Save, Trash2, Undo2, Upload, Wand2, ZoomIn, ZoomOut } from "lucide-react";
 import { AddButton, askToDownload, Button, DownloadPreview, Empty, Field, IconButton, Modal, PageHead, RowActions } from "../ui";
-import { buildFontEmbedCSS, fileSlug, renderNodePng } from "../lib/exporter";
+import { buildFontEmbedCSS, fileSlug, renderNodePng, stampPdfPage } from "../lib/exporter";
+import { loadImage, printLogoSrc } from "../lib/brand";
 import { entryGrade, getCategoryName, getTeamName, id, type CardDesign, type DesignElement, type ElementKind, type FestData, type Member, type PosterTemplate, type Program } from "../types";
 import { ALL_FONTS, fontStack, loadFonts } from "../lib/fonts";
 import { backgroundIsLight, fitTextColors } from "../lib/contrast";
@@ -231,6 +232,8 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
     report("Preparing fonts…");
     // Every card shares one design, so the font CSS is built once and reused.
     const fontEmbedCSS = await buildFontEmbedCSS(nodes[0]).catch(() => "");
+    // Tiny recognisable logo stamped at the top-right of each printed page.
+    const printLogo = await loadImage(printLogoSrc(data.festLogo)).catch(() => null);
     const pdf = new jsPDF({ orientation: paper.width > paper.height ? "landscape" : "portrait", unit: "mm", format: [paper.width, paper.height] });
     const { width, height, margin, gap } = config;
     let rendered = 0;
@@ -243,6 +246,8 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
         report(`Rendering card ${rendered} of ${nodes.length}…`);
         const png = await renderNodePng(nodes[rendered - 1], { pixelRatio: 3, fontEmbedCSS });
         pdf.addImage(png, "PNG", x, y, width, height);
+        // Tiny recognisable logo at the top-right corner of the printed page.
+        if (slot === 0 && printLogo) stampPdfPage(pdf, printLogo, paper.width);
         if (config.cropMarks) {
           pdf.setDrawColor(70); pdf.setLineWidth(.12);
           for (const [cornerX, cornerY, horizontal, vertical] of [[x, y, -1, -1], [x + width, y, 1, -1], [x, y + height, -1, 1], [x + width, y + height, 1, 1]]) {

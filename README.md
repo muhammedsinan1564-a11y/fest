@@ -12,6 +12,8 @@ A React, TypeScript, Vite and Tailwind CSS fest-management app. The Explore work
 
 Administrator access is reached by typing `SINAN610CM321` into the fest-code bar, which signs you straight in. If that automatic sign-in fails in cloud mode, the password screen appears as a fallback.
 
+Explore role credentials also include `PUBLICRESULT / PUBLIC123` and `QUIZMASTER / QUIZ123`.
+
 The browser only has access to fests allowed by the signed-in Supabase user. All fest data is scoped by `fest_id`, and changes in one fest do not appear in another. Realtime updates refresh other signed-in devices. The database stores no staff passwords in the fest snapshot; Supabase Auth owns those credentials. Existing passwords are shown only during creation in cloud mode.
 
 Without the three `VITE_` settings, the app explicitly enters offline preview mode. Offline-created fests are kept in that browser only and cannot sync across devices. The Explore workspace is a separate local sample with the stated limits.

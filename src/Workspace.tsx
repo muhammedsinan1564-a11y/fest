@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ArrowLeft, Award, BarChart3, Bell, BookOpenCheck, CalendarDays, ChevronRight, Clapperboard, ClipboardList, Dices, FileText, Gavel, IdCard, Image, Layers, LayoutDashboard, ListChecks, LogOut, MapPin, Megaphone, MessageSquareText, Moon, MoreHorizontal, Printer, Radio, Settings, ShieldCheck, Sparkles, Sun, Timer, Trophy, UserRound, Users, Vote, X, type LucideIcon } from "lucide-react";
+import { Activity, ArrowLeft, Award, BarChart3, Bell, BookOpenCheck, CalendarDays, ChevronRight, Clapperboard, ClipboardList, Dices, FileText, Gavel, IdCard, Image, Layers, LayoutDashboard, ListChecks, LogOut, MapPin, Megaphone, MessageSquareText, Moon, MoreHorizontal, Printer, Radio, Send, Settings, ShieldCheck, Sparkles, Sun, Timer, Trophy, UserRound, Users, Vote, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { IconButton } from "./ui";
@@ -15,7 +15,7 @@ import { IDCardSection, PosterTemplatesSection } from "./sections/Designer";
 import { PrintoutsSection } from "./sections/Printouts";
 import { StopwatchSection } from "./sections/Stopwatch";
 import { HighlightsSection } from "./sections/Highlights";
-import { MemberQuizSection, QuizAnswersSection, QuizBuilderSection, QuizPointsSection } from "./sections/Quiz";
+import { MemberQuizSection, QuizAnswersSection, QuizBuilderSection, QuizPointsSection, QuizPublishSection } from "./sections/Quiz";
 import { PredictionSection } from "./sections/Prediction";
 import type { SectionProps } from "./sections/common";
 import { loadFonts } from "./lib/fonts";
@@ -38,7 +38,7 @@ const ICONS: Record<Section, LucideIcon> = {
   Judgement: Gavel, "Team Marks": Trophy, "Grade Points": Award, "ID Card Setup": IdCard, Printouts: Printer,
   "Code Letter Entry": FileText, Results: Trophy, "Public Team Scores": BarChart3, "Random Picker": Dices,
   Stopwatch: Timer, "Poster Templates": Image, "Top Candidates": Award, Monitor: ClipboardList,
-  Media: Megaphone, Highlights: Radio, Prediction: Vote, Quiz: BookOpenCheck, "Quiz Builder": ListChecks, "Quiz Points": Trophy, "Quiz Answers": MessageSquareText, Bell, Settings,
+  Media: Megaphone, Highlights: Radio, Prediction: Vote, Quiz: BookOpenCheck, "Quiz Builder": ListChecks, "Quiz Points": Trophy, "Quiz Answers": MessageSquareText, "Publish Result": Send, Bell, Settings,
 };
 
 const MAIN_GROUPS: { label: string; items: Section[] }[] = [
@@ -53,15 +53,15 @@ const MAIN_GROUPS: { label: string; items: Section[] }[] = [
 const ROLE_GROUPS: Record<string, { label: string; items: Section[] }[]> = {
   JUDGE: [{ label: "YOUR SPACE", items: ["Dashboard", "Judgement", "Stopwatch", "Bell"] }],
   MONITOR: [{ label: "YOUR SPACE", items: ["Dashboard", "Stage Control", "Code Letter Entry", "Monitor", "Stopwatch", "Public Team Scores", "Printouts", "Random Picker"] }],
-  MEDIA: [{ label: "YOUR SPACE", items: ["Dashboard", "Highlights", "Monitor", "Media", "Results", "Poster Templates"] }],
+  MEDIA: [{ label: "YOUR SPACE", items: ["Dashboard", "Highlights", "Monitor", "Media", "Results", "Public Team Scores", "ID Card Setup", "Poster Templates"] }],
   "STAGE MANAGER": [{ label: "YOUR SPACE", items: ["Dashboard", "Stage Control", "Stages", "Schedule", "Bell"] }],
 };
 
 const TAB_GROUPS: Record<string, Section[]> = {
   "TEAM MANAGER": ["Dashboard", "Members", "Programs", "Printouts"],
   MEMBER: ["Dashboard", "Highlights", "Quiz", "Results", "Public Team Scores"],
-  "PUBLIC RESULT": ["Results", "Highlights"],
-  "QUIZ MASTER": ["Quiz Builder", "Quiz Points", "Quiz Answers"],
+  "PUBLIC RESULT": ["Results", "Highlights", "Public Team Scores"],
+  "QUIZ MASTER": ["Quiz Builder", "Quiz Points", "Quiz Answers", "Publish Result"],
 };
 
 export default function Workspace({ fest, user, onChange, onProvision, onBack, onLogout, onChangeUser, notify }: WorkspaceProps) {
@@ -139,6 +139,7 @@ export default function Workspace({ fest, user, onChange, onProvision, onBack, o
       case "Quiz Builder": return <QuizBuilderSection {...props} />;
       case "Quiz Points": return <QuizPointsSection {...props} />;
       case "Quiz Answers": return <QuizAnswersSection {...props} />;
+      case "Publish Result": return <QuizPublishSection {...props} />;
       case "Settings": return <SettingsSection {...props} />;
     }
   };
@@ -147,10 +148,10 @@ export default function Workspace({ fest, user, onChange, onProvision, onBack, o
   const style = { "--body-font": `"${settings.font}", monospace`, "--heading-font": `"${settings.headingFont}", Georgia, serif`, "--fest-logo-bg": fest.data.festLogo ? `url(${JSON.stringify(fest.data.festLogo)})` : "none" } as CSSProperties;
 
   return <div className={`workspace ${currentDark ? "" : "theme-light"} ${tabbed ? "has-bottom-tabs" : ""} ${publicShell ? "public-result-shell no-top-shell" : ""}`} style={style}>
-    {publicShell && fest.data.festLogo && <div className="public-fest-watermark" aria-hidden="true" />}
+    {fest.data.festLogo && <div className="fest-global-watermark" aria-hidden="true" />}
     {!publicShell && <header className="workspace-header"><div className="header-left"><IconButton label="Back to home" onClick={onBack}><ArrowLeft size={19} /></IconButton>{!tabbed && <IconButton label="Open menu" onClick={() => setMenuOpen(true)}><MoreHorizontal size={24} /></IconButton>}<span className="header-divider" /><div className="header-fest"><strong>{fest.name}</strong><span>{fest.demo ? "EXPLORE WORKSPACE" : "FEST WORKSPACE"}</span></div></div>
       {onChangeUser && <button className="change-user" onClick={onChangeUser}><Sparkles size={15} /> Change user <ChevronRight size={16} /></button>}
-      <div className="header-right"><ThemePicker compact /><IconButton label={currentDark ? "Use light theme" : "Use dark theme"} onClick={event => waveThemeChange(event.currentTarget, () => flushSync(() => setAppearance({ dark: !currentDark })), currentDark ? "#f7f4ee" : darkThemeColor)}>{currentDark ? <Sun size={18} /> : <Moon size={18} />}</IconButton><span className="header-divider right-divider" /><div className="user-chip"><span>{user.name.charAt(0)}</span><div><strong>{user.name}</strong><small>{user.role === "MAIN" ? "Main user" : user.role.toLowerCase()}</small></div></div><IconButton label="Log out" onClick={onLogout}><LogOut size={18} /></IconButton></div>
+      <div className="header-right"><ThemePicker compact /><IconButton label={currentDark ? "Use light theme" : "Use dark theme"} onClick={event => waveThemeChange(event.currentTarget, () => flushSync(() => setAppearance({ dark: !currentDark })), currentDark ? "#f7f4ee" : darkThemeColor)}>{currentDark ? <Sun size={18} /> : <Moon size={18} />}</IconButton><span className="header-divider right-divider" />{user.role === "MAIN" ? <button className="user-chip user-chip-link" onClick={() => navigate("Settings")} title="Open settings"><span>{user.name.charAt(0)}</span><div><strong>{user.name}</strong><small>Main user · open settings</small></div></button> : <div className="user-chip"><span>{user.name.charAt(0)}</span><div><strong>{user.name}</strong><small>{user.role.toLowerCase()}</small></div></div>}<IconButton label="Log out" onClick={onLogout}><LogOut size={18} /></IconButton></div>
     </header>}
 
     <AnimatePresence>{menuOpen && !tabbed && <><motion.div className="nav-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMenuOpen(false)} /><motion.aside className="nav-drawer" initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "spring", stiffness: 360, damping: 36 }}><div className="nav-drawer-head"><div><span className="nav-drawer-kicker">YOUR WORKSPACE</span><h2>{fest.name}</h2></div><IconButton label="Close menu" onClick={() => setMenuOpen(false)}><X size={20} /></IconButton></div><div className="nav-scroll">{groups.map(group => <div className="nav-group" key={group.label}><span className="nav-group-label">{group.label}</span>{group.items.map(item => { const Icon = ICONS[item]; return <button className={`nav-item ${section === item ? "active" : ""}`} key={item} onClick={() => navigate(item)}>{section === item && <motion.span layoutId="active-nav" className="nav-active-bg" transition={{ type: "spring", stiffness: 410, damping: 34 }} />}<Icon size={17} strokeWidth={1.8} /><span>{item}</span>{section === item && <ChevronRight size={15} />}</button>; })}</div>)}</div><div className="nav-drawer-bottom"><button onClick={onLogout}><LogOut size={17} /> Logout</button><span>MAKE IT MEMORABLE.</span></div></motion.aside></>}</AnimatePresence>

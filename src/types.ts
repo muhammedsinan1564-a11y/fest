@@ -6,7 +6,7 @@ export type Section =
   | "Team Marks" | "Grade Points" | "ID Card Setup" | "Printouts" | "Code Letter Entry"
   | "Results" | "Public Team Scores" | "Random Picker"
   | "Poster Templates" | "Top Candidates" | "Monitor" | "Media" | "Bell" | "Settings" | "Stopwatch"
-  | "Highlights" | "Prediction" | "Quiz" | "Quiz Builder" | "Quiz Points" | "Quiz Answers";
+  | "Highlights" | "Prediction" | "Quiz" | "Quiz Builder" | "Quiz Points" | "Quiz Answers" | "Publish Result";
 
 export interface UserRecord {
   id: string;
@@ -76,10 +76,14 @@ export interface ScheduleCell {
   delayMinutes?: number;
 }
 
+export type HighlightPlace = "winner" | "runner" | "secondRunner";
+
 export interface HighlightsData {
   liveUrl?: string;
-  /** One submitted video URL per stage program. */
+  /** One submitted video URL per stage program (legacy single-link fallback). */
   programUrls: Record<string, string>;
+  /** Separate video per winner / runner / second runner of each stage program. */
+  programWinnerUrls: Record<string, Partial<Record<HighlightPlace, string>>>;
 }
 
 export interface PredictionData {
@@ -95,10 +99,18 @@ export interface QuizQuestion {
   question: string;
   answerType: "options" | "text";
   options: string[];
-  /** Compared case-insensitively for text questions. */
-  correctAnswer: string;
+  /** Legacy auto-check answer (kept for old fests). New quizzes are reviewed manually. */
+  correctAnswer?: string;
   published: boolean;
   createdAt: string;
+  /** Countdown set at creation (two bars: minutes + seconds). 0/empty = no limit. */
+  timerMinutes?: number;
+  timerSeconds?: number;
+  /** When the quiz stops accepting answers. */
+  closesAt?: string;
+  /** Marks count only after the Quiz Master publishes this question's result. */
+  resultPublished?: boolean;
+  resultPublishedAt?: string;
 }
 
 export interface QuizAnswer {
@@ -106,12 +118,34 @@ export interface QuizAnswer {
   quizId: string;
   memberId: string;
   answer: string;
+  /** Quiz-master verdict (tick = true, cross = false). Points count only after publish. */
   correct: boolean;
+  /** Set once the Quiz Master has reviewed this answer with tick/cross. */
+  reviewed?: boolean;
   submittedAt: string;
 }
 
+/** Points count only for reviewed-correct answers on result-published quizzes. */
+export function quizPointsFor(memberId: string, data: { quizzes: QuizQuestion[]; quizAnswers: QuizAnswer[] }): number {
+  const publishedIds = new Set(data.quizzes.filter(quiz => quiz.resultPublished).map(quiz => quiz.id));
+  return data.quizAnswers.filter(answer => answer.memberId === memberId && answer.correct && publishedIds.has(answer.quizId)).length;
+}
+
 export type ElementKind = "text" | "image" | "name" | "team" | "category" | "number" | "photo" | "qr"
-  | "winner" | "runner" | "secondRunner" | "program" | "festival" | "mark" | "winnerPoints" | "runnerPoints" | "secondRunnerPoints";
+  | "winner" | "runner" | "secondRunner" | "winnerGrade" | "runnerGrade" | "secondRunnerGrade"
+  | "program" | "festival" | "mark" | "winnerPoints" | "runnerPoints" | "secondRunnerPoints"
+  | "placeName" | "placeGrade" | "placePoints"
+  | "teamMarkName" | "teamMarkPoints" | "teamRankName" | "teamRankPoints"
+  | "shape";
+
+export type ShapeType =
+  | "circle" | "ellipse" | "square" | "rect" | "roundedRect"
+  | "triangle" | "rightTriangle" | "star5" | "star8" | "starburst"
+  | "pentagon" | "hexagon" | "octagon" | "diamond" | "trapezoid" | "parallelogram"
+  | "heart" | "crescent" | "cross" | "shield" | "badge" | "ribbon" | "wreath"
+  | "mapPin" | "compass" | "sun" | "cloud" | "lightning" | "wave" | "flag"
+  | "arrowRight" | "arrowLeft" | "arrowUp" | "arrowDown" | "doubleArrow" | "curvedArrow"
+  | "chevronRight" | "quote" | "dividerLine" | "doubleLine" | "dottedLine";
 
 export interface DesignElement {
   id: string;
@@ -128,9 +162,67 @@ export interface DesignElement {
   zoom: number;
   text?: string;
   image?: string;
+  place?: number;
+  teamId?: string;
+  teamRank?: number;
+  shapeType?: ShapeType;
+  strokeColor?: string;
+  strokeWidth?: number;
+  rotation?: number;
+  /* --- Extended canvas properties (mobile poster studio parity) --- */
+  opacity?: number;
+  layerName?: string;
+  hidden?: boolean;
+  locked?: boolean;
+  fontWeight?: number;
+  minFontSize?: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+  fontStyle?: "Normal" | "Italic" | "Bold" | "Bold Italic";
+  verticalAlign?: "Top" | "Middle" | "Bottom";
+  fitMode?: "Width" | "Height" | "Auto";
+  textTransform?: "None" | "Title case" | "UPPERCASE" | "lowercase";
+  minLines?: number;
+  insideWidth?: number;
+  prefillColor?: string;
+  prefix?: string;
+  suffix?: string;
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowX?: number;
+  shadowY?: number;
 }
 
-export interface PosterTemplate { id: string; name: string; background?: string; elements: DesignElement[]; fromResult?: number | null; toResult?: number | null; createdBy?: string }
+export interface SampleWinner {
+  name: string;
+  team: string;
+}
+
+export interface SampleResultData {
+  programName: string;
+  category: string;
+  resultNumber: number;
+  winners: SampleWinner[];
+}
+
+export interface PosterTemplate {
+  id: string;
+  name: string;
+  templateType?: "result" | "teamMark";
+  background?: string;
+  backgroundColor?: string;
+  backgroundWidth?: number;
+  backgroundHeight?: number;
+  width?: number;
+  height?: number;
+  resolution?: number;
+  unit?: string;
+  elements: DesignElement[];
+  fromResult?: number | null;
+  toResult?: number | null;
+  sampleResult?: SampleResultData;
+  createdBy?: string;
+}
 
 /** A template with no range set is available for every published result. */
 export function templateCoversResult(template: PosterTemplate, resultNumber?: number) {
@@ -229,7 +321,7 @@ export function emptyData(): FestData {
   return {
     users: [], teams: [], categories: [], members: [], programs: [], scales: [structuredClone(standardScale), structuredClone(simpleScale)],
     stages: [], slots: [], schedule: [], posters: [], publicProgramIds: [], activity: [],
-    highlights: { programUrls: {} },
+    highlights: { programUrls: {}, programWinnerUrls: {} },
     prediction: { active: false, responses: {} },
     quizzes: [], quizAnswers: [],
     cardDesign: {
@@ -251,7 +343,7 @@ export function hydrateFestData(data: Partial<FestData> | undefined): FestData {
   return {
     ...base,
     ...source,
-    highlights: { ...base.highlights, ...(source.highlights || {}), programUrls: { ...(source.highlights?.programUrls || {}) } },
+    highlights: { ...base.highlights, ...(source.highlights || {}), programUrls: { ...(source.highlights?.programUrls || {}) }, programWinnerUrls: { ...(source.highlights?.programWinnerUrls || {}) } },
     prediction: { ...base.prediction, ...(source.prediction || {}), responses: { ...(source.prediction?.responses || {}) } },
     quizzes: source.quizzes || [],
     quizAnswers: source.quizAnswers || [],

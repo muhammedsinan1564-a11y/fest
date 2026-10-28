@@ -79,7 +79,50 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
   const filtered = visible.filter(member => (!categoryFilter || member.categoryId === categoryFilter) && (!teamFilter || member.teamId === teamFilter) && matches(query, member.name, member.code));
   const [open, setOpen] = useState(false); const [bulkOpen, setBulkOpen] = useState(false); const [editing, setEditing] = useState<Member | null>(null); const [viewing, setViewing] = useState<Member | null>(null);
   const [form, setForm] = useState(blankMember); const [bulkRows, setBulkRows] = useState<Record<string, string>[]>([]);
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [bulkAddCategoryId, setBulkAddCategoryId] = useState("");
+  const [bulkAddTeamId, setBulkAddTeamId] = useState("");
+  const [bulkAddRows, setBulkAddRows] = useState<{ name: string; mobile: string; place: string }[]>([{ name: "", mobile: "", place: "" }]);
   const startAdd = () => { setEditing(null); setForm({ ...blankMember, categoryId: data.categories[0]?.id || "", teamId: manager ? user.teamId || "" : data.teams[0]?.id || "" }); setOpen(true); };
+  const startBulkAdd = () => {
+    setBulkAddCategoryId(data.categories[0]?.id || "");
+    setBulkAddTeamId(manager ? user.teamId || "" : data.teams[0]?.id || "");
+    setBulkAddRows([{ name: "", mobile: "", place: "" }]);
+    setBulkAddOpen(true);
+  };
+  const updateBulkAddRow = (index: number, field: "name" | "mobile" | "place", value: string) => {
+    setBulkAddRows((previous) => previous.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row));
+  };
+  const confirmBulkAdd = (event: FormEvent) => {
+    event.preventDefault();
+    if (!bulkAddCategoryId || !bulkAddTeamId) return notify("Select a category and a team first.");
+    if (manager && bulkAddTeamId !== user.teamId) return notify("You can only add members to your team.");
+    const entered = bulkAddRows
+      .map((row) => ({ name: row.name.trim(), mobile: row.mobile.trim(), place: row.place.trim() }))
+      .filter((row) => row.name || row.mobile || row.place);
+    if (!entered.length) return notify("Add at least one member name.");
+    if (entered.some((row) => !row.name)) return notify("Every filled row needs a member name. Remove empty rows or complete them.");
+    const existingNames = new Set([...data.members, ...data.users, ...fest.mainUsers].map((person) => person.name.toLowerCase()));
+    const duplicate = entered.find((row) => existingNames.has(row.name.toLowerCase()) || entered.filter((item) => item.name.toLowerCase() === row.name.toLowerCase()).length > 1);
+    if (duplicate) return notify(`"${duplicate.name}" is already in use. Member names must be unique because they are used to sign in.`);
+    const available = fest.demo ? Math.max(0, 20 - data.members.length) : Infinity;
+    if (entered.length > available) return notify(`Explore mode can hold ${available} more member${available === 1 ? "" : "s"}. Remove ${entered.length - available} row${entered.length - available === 1 ? "" : "s"} or create a full fest.`);
+    const created: Member[] = entered.map((row) => ({
+      id: id(),
+      name: row.name,
+      categoryId: bulkAddCategoryId,
+      teamId: bulkAddTeamId,
+      code: memberCode(),
+      mobile: row.mobile,
+      place: row.place,
+      createdBy: user.id,
+    }));
+    onChange((next) => ({ ...next, members: [...next.members, ...created] }), `Bulk added ${created.length} members`);
+    created.forEach((member) => { void onProvision({ id: member.id, name: member.name, password: member.code, role: "MEMBER", memberId: member.id, teamId: member.teamId }); });
+    setBulkAddOpen(false);
+    setBulkAddRows([{ name: "", mobile: "", place: "" }]);
+    notify(`${created.length} member${created.length === 1 ? "" : "s"} added`);
+  };
   const save = (event: FormEvent) => {
     event.preventDefault(); if (!form.name.trim() || !form.categoryId || !form.teamId) return notify("Name, category and team are required.");
     if (manager && form.teamId !== user.teamId) return notify("You can only add members to your team.");
@@ -132,7 +175,7 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
       setSamplePreview(false); notify("Sample sheet downloaded");
     } catch { notify("The sample sheet could not be created. Please try again."); }
   };
-  return <><PageHead eyebrow="SETUP / 03" title="Members" description={manager ? "The people who make your team." : "Every name behind every moment."} action={<div className="button-row"><Button variant="secondary" icon={<Upload size={17} />} onClick={() => setBulkOpen(true)}>Import sheet</Button><AddButton onClick={startAdd}>Add member</AddButton></div>} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search members or codes" /><ViewToggle mode={view} onChange={setView} /><select aria-label="Filter by category" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">All categories</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select>{!manager && <select aria-label="Filter by team" value={teamFilter} onChange={event => setTeamFilter(event.target.value)}><option value="">All teams</option>{data.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select>}<span className="toolbar-count">{filtered.length} members</span></div>
+  return <><PageHead eyebrow="SETUP / 03" title="Members" description={manager ? "The people who make your team." : "Every name behind every moment."} action={<div className="button-row"><Button variant="secondary" icon={<Upload size={17} />} onClick={() => setBulkOpen(true)}>Import sheet</Button><Button variant="secondary" icon={<Users size={17} />} onClick={startBulkAdd}>Add as bulk</Button><AddButton onClick={startAdd}>Add member</AddButton></div>} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search members or codes" /><ViewToggle mode={view} onChange={setView} /><select aria-label="Filter by category" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">All categories</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select>{!manager && <select aria-label="Filter by team" value={teamFilter} onChange={event => setTeamFilter(event.target.value)}><option value="">All teams</option>{data.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select>}<span className="toolbar-count">{filtered.length} members</span></div>
     {filtered.length ? view === "box"
       ? <div className="card-grid">{filtered.map(member => <div className="mini-card" key={member.id}>
           <div className="mini-card-head"><div className="person-avatar sm">{member.photo ? <img src={member.photo} alt="" /> : member.name.slice(0, 1)}</div><div><strong>{member.name}</strong><small>{member.code}</small></div></div>
@@ -143,6 +186,55 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
       : <Empty title="No members yet" description="Add your first participant, or import a spreadsheet to get started." action={<AddButton onClick={startAdd}>Add member</AddButton>} />}
     {open && <Modal title={editing ? "Edit member" : "Add a member"} subtitle="Only the name, category and team are required." onClose={() => setOpen(false)} wide><form className="form-stack" onSubmit={save}><div className="form-grid"><Field label="Member name"><input autoFocus required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Full name" /></Field><Field label="Category"><select required value={form.categoryId} onChange={event => setForm({ ...form, categoryId: event.target.value })}><option value="">Select category</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Field>{!manager && <Field label="Team"><select required value={form.teamId} onChange={event => setForm({ ...form, teamId: event.target.value })}><option value="">Select team</option>{data.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Field>}<Field label="Mobile number (optional)"><input type="tel" value={form.mobile} onChange={event => setForm({ ...form, mobile: event.target.value })} placeholder="Phone number" /></Field><Field label="Place (optional)"><input value={form.place} onChange={event => setForm({ ...form, place: event.target.value })} placeholder="Hometown or campus" /></Field></div><div className="photo-upload-row"><label className="photo-pick"><input type="file" accept="image/*" onChange={event => void handlePhoto(event.target.files?.[0])} hidden />{form.photo ? <div className="photo-preview" onWheel={event => { event.preventDefault(); setForm(previous => ({ ...previous, photoZoom: Math.min(3, Math.max(1, previous.photoZoom + (event.deltaY < 0 ? .1 : -.1))) })); }}><img src={form.photo} alt="Member preview" style={{ transform: `scale(${form.photoZoom})` }} /></div> : <ImagePlus size={22} />}<span>{form.photo ? "Change photo · scroll to zoom" : "Add photo (optional)"}</span></label>{form.photo && <button type="button" className="subtle-link" onClick={() => setForm({ ...form, photo: "" })}>Remove photo</button>}</div><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit">Confirm <ArrowRight size={16} /></Button></div></form></Modal>}
     {viewing && <Modal title={viewing.name} subtitle="Member details" onClose={() => setViewing(null)}><div className="member-detail">{viewing.photo && <img src={viewing.photo} alt={viewing.name} />}<div className="detail-list"><div><span>Member code / password</span><strong>{viewing.code}</strong></div><div><span>Category</span><strong>{getCategoryName(data, viewing.categoryId)}</strong></div><div><span>Team</span><strong>{getTeamName(data, viewing.teamId)}</strong></div><div><span>Mobile</span><strong>{viewing.mobile || "Not provided"}</strong></div><div><span>Place</span><strong>{viewing.place || "Not provided"}</strong></div></div></div></Modal>}
+    {bulkAddOpen && <Modal title="Add as bulk" subtitle="Choose one category and team, then add as many members as you need." onClose={() => setBulkAddOpen(false)} wide>
+      <form className="form-stack" onSubmit={confirmBulkAdd}>
+        <div className="form-grid">
+          <Field label="Category">
+            <select required value={bulkAddCategoryId} onChange={(event) => setBulkAddCategoryId(event.target.value)}>
+              <option value="">Select category</option>
+              {data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Team">
+            <select required value={bulkAddTeamId} disabled={manager} onChange={(event) => setBulkAddTeamId(event.target.value)}>
+              <option value="">Select team</option>
+              {data.teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <div className="bulk-member-rows">
+          {bulkAddRows.map((row, index) => (
+            <div className="bulk-member-row" key={index}>
+              <span className="bulk-row-number">{index + 1}</span>
+              <Field label="Member name">
+                <input autoFocus={index === 0} value={row.name} onChange={(event) => updateBulkAddRow(index, "name", event.target.value)} placeholder="Member name" />
+              </Field>
+              <Field label="Mobile number">
+                <input type="tel" value={row.mobile} onChange={(event) => updateBulkAddRow(index, "mobile", event.target.value)} placeholder="Mobile number" />
+              </Field>
+              <Field label="Place">
+                <input value={row.place} onChange={(event) => updateBulkAddRow(index, "place", event.target.value)} placeholder="Place" />
+              </Field>
+              {bulkAddRows.length > 1 && (
+                <IconButton label={`Remove member row ${index + 1}`} onClick={() => setBulkAddRows((previous) => previous.filter((_, rowIndex) => rowIndex !== index))}>
+                  <X size={16} />
+                </IconButton>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <button type="button" className="bulk-add-row-btn" onClick={() => setBulkAddRows((previous) => [...previous, { name: "", mobile: "", place: "" }])}>
+          <Plus size={18} /> Add another member
+        </button>
+
+        <div className="form-actions">
+          <Button type="button" variant="secondary" onClick={() => setBulkAddOpen(false)}>Cancel</Button>
+          <Button type="submit">Confirm <ArrowRight size={16} /></Button>
+        </div>
+      </form>
+    </Modal>}
     {bulkOpen && <Modal title="Import members" subtitle="Bring your existing Excel sheet into Festize." onClose={() => { setBulkOpen(false); setBulkRows([]); setSamplePreview(false); }}><div className="form-stack"><p className="muted">Use column headers <strong>Name, Category, Team, Mobile, Place</strong>. Category and team names should already exist. {manager && "All rows will be added to your team."}</p>{samplePreview
       ? <div className="inline-download"><div className="download-preview-meta"><span className="download-format">XLSX</span><span>Preview · this is exactly what will be saved</span></div><div className="excel-sheet"><table className="excel-table"><thead><tr>{Object.keys(sampleRow).map(column => <th key={column}>{column.toUpperCase()}</th>)}</tr></thead><tbody><tr>{Object.values(sampleRow).map((value, index) => <td key={index}>{value || "—"}</td>)}</tr></tbody></table></div><div className="form-actions"><Button variant="secondary" onClick={() => setSamplePreview(false)}>Back</Button><Button onClick={confirmSample}><Download size={16} /> Confirm download</Button></div></div>
       : <Button variant="secondary" icon={<Download size={16} />} onClick={downloadSample}>Download sample sheet</Button>}<Field label="Excel or CSV file"><input type="file" accept=".xlsx,.xls,.csv" onChange={event => void parseSheet(event.target.files?.[0])} /></Field>{bulkRows.length > 0 && <div className="import-preview"><strong>{bulkRows.length} rows found</strong><span>{bulkRows.slice(0, 3).map(row => row.name || "Unnamed").join(" · ")}{bulkRows.length > 3 ? " ..." : ""}</span></div>}<div className="form-actions"><Button variant="secondary" onClick={() => setBulkOpen(false)}>Cancel</Button><Button disabled={!bulkRows.length} onClick={importRows}>Import members <ArrowRight size={16} /></Button></div></div></Modal>}

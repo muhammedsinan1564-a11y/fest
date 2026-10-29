@@ -56,6 +56,8 @@ export interface Program {
   venue: "Stage" | "Off stage";
   scaleId: string;
   judgeIds: string[];
+  /** Stage managers assigned to this program. When set, only they see it in stage views. */
+  stageManagerIds?: string[];
   /** Explicit scoring override. When absent: <5 judges -> average, 5+ -> Olympic trimmed mean. */
   scoringMethod?: "average" | "trimmed";
   entries: ProgramEntry[];
@@ -262,6 +264,8 @@ export interface FestData {
   /** Public, read-only account credentials embedded in the printable QR. */
   publicResultCredentials?: { username: string; password: string };
   highlights: HighlightsData;
+  /** Max programs one member may enter (per venue). Missing = no limit set yet. */
+  memberProgramLimits?: { stage: number; offStage: number };
   prediction: PredictionData;
   quizzes: QuizQuestion[];
   quizAnswers: QuizAnswer[];

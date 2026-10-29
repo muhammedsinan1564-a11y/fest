@@ -3,7 +3,7 @@ import { ArrowRight, Check, ChevronRight, CornerUpLeft, Dices, Eye, Lock, Save }
 import { Button, Empty, PageHead, SearchInput, StatusBadge, useViewPref, ViewToggle } from "../ui";
 import { entryGrade, getCategoryName, getGrade, programReadyForJudgement, STATUSES, type Program } from "../types";
 import { activeJudgesFor, isolatedViewForJudge, scoringMethodFor } from "../lib/fast";
-import { canManage, entryDisplay, rankedEntries, type SectionProps } from "./common";
+import { canManage, entryDisplay, rankedEntries, stageManagerSees, type SectionProps } from "./common";
 
 /** One random code letter from the unambiguous alphabet (no I or O). */
 const randomLetter = () => "ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.floor(Math.random() * 24)];
@@ -22,7 +22,7 @@ export function ControlSection({ fest, user, onChange, notify, stageOnly = false
   const statusOptions: [string, string][] = stageOnly
     ? [["", "All states"], ["unstarted", "Not started"], ["0", "Reporting"], ["1", "Started"]]
     : [["", "All states"], ["unstarted", "Not started"], ["0", "Reporting"], ["1", "Started"], ["2", "Finished"], ["3", "Judgements"], ["4", "Finalysed"], ["5", "Published"]];
-  const programs = data.programs.filter(program => (!stageOnly || program.status < 2) && (!statusFilter || statusOf(program) === statusFilter) && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
+  const programs = data.programs.filter(program => (!stageOnly || program.status < 2) && stageManagerSees(program, user) && (!statusFilter || statusOf(program) === statusFilter) && `${program.name} ${getCategoryName(data, program.categoryId)}`.toLowerCase().includes(query.toLowerCase()));
   const counts = [{ name: "Not started", count: data.programs.filter(program => program.status < 0).length }, ...STATUSES.map((name, index) => ({ name, count: data.programs.filter(program => program.status === index).length }))];
   const next = (program: Program) => {
     if (!canUpdate || program.status >= 5) return;

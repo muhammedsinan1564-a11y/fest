@@ -15,9 +15,25 @@ export function confirmDelete(label: string) { return window.confirm(`Delete ${l
 export function canAdd(fest: Fest, kind: "teams" | "categories" | "members" | "programs" | "users") {
   if (!fest.demo) return true;
   const limits = { teams: 2, categories: 3, members: 20, programs: 5, users: 5 };
+  if (kind === "users") {
+    // Shared access accounts (public result, quiz master) are part of the role
+    // setup, so they must not use up the Explore staff quota.
+    const staffCount = fest.data.users.filter(user => user.role !== "PUBLIC RESULT" && user.role !== "QUIZ MASTER").length;
+    return staffCount < limits.users;
+  }
   return fest.data[kind].length < limits[kind];
 }
 export function limitMessage(kind: string) { return `Explore limit reached for ${kind}. Create a fest for more space.`; }
+
+/**
+ * Programs stay open to every stage manager unless stage managers are assigned.
+ * Once assigned, only those stage managers see the program in stage views.
+ */
+export function stageManagerSees(program: Program, user: UserRecord) {
+  if (user.role !== "STAGE MANAGER") return true;
+  const assigned = program.stageManagerIds || [];
+  return assigned.length === 0 || assigned.includes(user.id);
+}
 
 export function readImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

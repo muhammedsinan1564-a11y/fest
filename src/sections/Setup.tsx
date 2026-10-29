@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Copy, Download, Eye, ImagePlus, Plus, Upload, Users, X } from "lucide-react";
+import { ArrowRight, Copy, Download, Eye, ImagePlus, Plus, SlidersHorizontal, Upload, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { AddButton, askToDownload, Button, Empty, Field, IconButton, Modal, PageHead, RowActions, SearchInput, useViewPref, ViewToggle } from "../ui";
 import { getCategoryName, getTeamName, id, memberCode, randomPassword, type Category, type GradeRange, type GradeScale, type Member, type Role, type Stage, type Team, type UserRecord } from "../types";
@@ -83,6 +83,23 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
   const [bulkAddCategoryId, setBulkAddCategoryId] = useState("");
   const [bulkAddTeamId, setBulkAddTeamId] = useState("");
   const [bulkAddRows, setBulkAddRows] = useState<{ name: string; mobile: string; place: string }[]>([{ name: "", mobile: "", place: "" }]);
+  const [programLimitOpen, setProgramLimitOpen] = useState(false);
+  const [limitStage, setLimitStage] = useState("");
+  const [limitOff, setLimitOff] = useState("");
+  const openProgramLimits = () => {
+    setLimitStage(data.memberProgramLimits ? String(data.memberProgramLimits.stage) : "");
+    setLimitOff(data.memberProgramLimits ? String(data.memberProgramLimits.offStage) : "");
+    setProgramLimitOpen(true);
+  };
+  const saveProgramLimits = (event: FormEvent) => {
+    event.preventDefault();
+    const stage = Math.max(0, Math.floor(Number(limitStage) || 0));
+    const offStage = Math.max(0, Math.floor(Number(limitOff) || 0));
+    if (!stage && !offStage) return notify("Enter a limit for at least one program type.");
+    onChange((next) => ({ ...next, memberProgramLimits: { stage, offStage } }), `Set member program limits · ${stage} stage / ${offStage} off-stage`);
+    setProgramLimitOpen(false);
+    notify(`Limit saved — each member may enter ${stage} stage and ${offStage} off-stage program${stage === 1 && offStage === 1 ? "" : "s"}`);
+  };
   const startAdd = () => { setEditing(null); setForm({ ...blankMember, categoryId: data.categories[0]?.id || "", teamId: manager ? user.teamId || "" : data.teams[0]?.id || "" }); setOpen(true); };
   const startBulkAdd = () => {
     setBulkAddCategoryId(data.categories[0]?.id || "");
@@ -102,9 +119,7 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
       .filter((row) => row.name || row.mobile || row.place);
     if (!entered.length) return notify("Add at least one member name.");
     if (entered.some((row) => !row.name)) return notify("Every filled row needs a member name. Remove empty rows or complete them.");
-    const existingNames = new Set([...data.members, ...data.users, ...fest.mainUsers].map((person) => person.name.toLowerCase()));
-    const duplicate = entered.find((row) => existingNames.has(row.name.toLowerCase()) || entered.filter((item) => item.name.toLowerCase() === row.name.toLowerCase()).length > 1);
-    if (duplicate) return notify(`"${duplicate.name}" is already in use. Member names must be unique because they are used to sign in.`);
+    // Duplicate names are allowed in bulk too — every member keeps a unique code.
     const available = fest.demo ? Math.max(0, 20 - data.members.length) : Infinity;
     if (entered.length > available) return notify(`Explore mode can hold ${available} more member${available === 1 ? "" : "s"}. Remove ${entered.length - available} row${entered.length - available === 1 ? "" : "s"} or create a full fest.`);
     const created: Member[] = entered.map((row) => ({
@@ -127,7 +142,7 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
     event.preventDefault(); if (!form.name.trim() || !form.categoryId || !form.teamId) return notify("Name, category and team are required.");
     if (manager && form.teamId !== user.teamId) return notify("You can only add members to your team.");
     if (!editing && !canAdd(fest, "members")) return notify(limitMessage("members"));
-    if ([...data.members, ...data.users, ...fest.mainUsers].some(person => person.name.toLowerCase() === form.name.trim().toLowerCase() && person.id !== editing?.id)) return notify("That login name is already in use. Choose a distinct member name.");
+    // Duplicate member names are allowed — members are identified by their unique code.
     const member: Member = { id: editing?.id || id(), name: form.name.trim(), teamId: form.teamId, categoryId: form.categoryId, code: editing?.code || memberCode(), mobile: form.mobile.trim(), place: form.place.trim(), photo: form.photo || undefined, photoZoom: form.photoZoom, createdBy: editing?.createdBy || user.id };
     onChange(next => ({ ...next, members: editing ? next.members.map(item => item.id === editing.id ? member : item) : [...next.members, member] }), `${editing ? "Updated" : "Added"} member ${member.name}`);
     void onProvision({ id: member.id, name: member.name, password: member.code, role: "MEMBER", memberId: member.id, teamId: member.teamId }, editing ? "update" : "create");
@@ -175,7 +190,7 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
       setSamplePreview(false); notify("Sample sheet downloaded");
     } catch { notify("The sample sheet could not be created. Please try again."); }
   };
-  return <><PageHead eyebrow="SETUP / 03" title="Members" description={manager ? "The people who make your team." : "Every name behind every moment."} action={<div className="button-row"><Button variant="secondary" icon={<Upload size={17} />} onClick={() => setBulkOpen(true)}>Import sheet</Button><Button variant="secondary" icon={<Users size={17} />} onClick={startBulkAdd}>Add as bulk</Button><AddButton onClick={startAdd}>Add member</AddButton></div>} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search members or codes" /><ViewToggle mode={view} onChange={setView} /><select aria-label="Filter by category" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">All categories</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select>{!manager && <select aria-label="Filter by team" value={teamFilter} onChange={event => setTeamFilter(event.target.value)}><option value="">All teams</option>{data.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select>}<span className="toolbar-count">{filtered.length} members</span></div>
+  return <><PageHead eyebrow="SETUP / 03" title="Members" description={manager ? "The people who make your team." : "Every name behind every moment."} action={<div className="button-row"><Button variant="secondary" icon={<Upload size={17} />} onClick={() => setBulkOpen(true)}>Import sheet</Button><Button variant="secondary" icon={<Users size={17} />} onClick={startBulkAdd}>Add as bulk</Button><Button variant="secondary" icon={<SlidersHorizontal size={17} />} onClick={openProgramLimits}>no of programs for a member</Button><AddButton onClick={startAdd}>Add member</AddButton></div>} /><div className="section-toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search members or codes" /><ViewToggle mode={view} onChange={setView} /><select aria-label="Filter by category" value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">All categories</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select>{!manager && <select aria-label="Filter by team" value={teamFilter} onChange={event => setTeamFilter(event.target.value)}><option value="">All teams</option>{data.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select>}<span className="toolbar-count">{filtered.length} members</span></div>
     {filtered.length ? view === "box"
       ? <div className="card-grid">{filtered.map(member => <div className="mini-card" key={member.id}>
           <div className="mini-card-head"><div className="person-avatar sm">{member.photo ? <img src={member.photo} alt="" /> : member.name.slice(0, 1)}</div><div><strong>{member.name}</strong><small>{member.code}</small></div></div>
@@ -186,6 +201,7 @@ export function MembersSection({ fest, user, onChange, onProvision, notify }: Se
       : <Empty title="No members yet" description="Add your first participant, or import a spreadsheet to get started." action={<AddButton onClick={startAdd}>Add member</AddButton>} />}
     {open && <Modal title={editing ? "Edit member" : "Add a member"} subtitle="Only the name, category and team are required." onClose={() => setOpen(false)} wide><form className="form-stack" onSubmit={save}><div className="form-grid"><Field label="Member name"><input autoFocus required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Full name" /></Field><Field label="Category"><select required value={form.categoryId} onChange={event => setForm({ ...form, categoryId: event.target.value })}><option value="">Select category</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Field>{!manager && <Field label="Team"><select required value={form.teamId} onChange={event => setForm({ ...form, teamId: event.target.value })}><option value="">Select team</option>{data.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></Field>}<Field label="Mobile number (optional)"><input type="tel" value={form.mobile} onChange={event => setForm({ ...form, mobile: event.target.value })} placeholder="Phone number" /></Field><Field label="Place (optional)"><input value={form.place} onChange={event => setForm({ ...form, place: event.target.value })} placeholder="Hometown or campus" /></Field></div><div className="photo-upload-row"><label className="photo-pick"><input type="file" accept="image/*" onChange={event => void handlePhoto(event.target.files?.[0])} hidden />{form.photo ? <div className="photo-preview" onWheel={event => { event.preventDefault(); setForm(previous => ({ ...previous, photoZoom: Math.min(3, Math.max(1, previous.photoZoom + (event.deltaY < 0 ? .1 : -.1))) })); }}><img src={form.photo} alt="Member preview" style={{ transform: `scale(${form.photoZoom})` }} /></div> : <ImagePlus size={22} />}<span>{form.photo ? "Change photo · scroll to zoom" : "Add photo (optional)"}</span></label>{form.photo && <button type="button" className="subtle-link" onClick={() => setForm({ ...form, photo: "" })}>Remove photo</button>}</div><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit">Confirm <ArrowRight size={16} /></Button></div></form></Modal>}
     {viewing && <Modal title={viewing.name} subtitle="Member details" onClose={() => setViewing(null)}><div className="member-detail">{viewing.photo && <img src={viewing.photo} alt={viewing.name} />}<div className="detail-list"><div><span>Member code / password</span><strong>{viewing.code}</strong></div><div><span>Category</span><strong>{getCategoryName(data, viewing.categoryId)}</strong></div><div><span>Team</span><strong>{getTeamName(data, viewing.teamId)}</strong></div><div><span>Mobile</span><strong>{viewing.mobile || "Not provided"}</strong></div><div><span>Place</span><strong>{viewing.place || "Not provided"}</strong></div></div></div></Modal>}
+    {programLimitOpen && <Modal title="no of programs for a member" subtitle="Members at their limit stop appearing when you add members to a program." onClose={() => setProgramLimitOpen(false)}><form className="form-stack" onSubmit={saveProgramLimits}><div className="form-grid"><Field label="Stage programs" hint="Most stage programs one member may enter."><input type="number" min="0" max="99" value={limitStage} onChange={event => setLimitStage(event.target.value)} placeholder="e.g. 3" /></Field><Field label="Off-stage programs" hint="Most off-stage programs one member may enter."><input type="number" min="0" max="99" value={limitOff} onChange={event => setLimitOff(event.target.value)} placeholder="e.g. 2" /></Field></div><p className="muted small-text">{data.memberProgramLimits ? `Current limit: ${data.memberProgramLimits.stage} stage program${data.memberProgramLimits.stage === 1 ? "" : "s"} · ${data.memberProgramLimits.offStage} off-stage program${data.memberProgramLimits.offStage === 1 ? "" : "s"}.` : "No limit has been added yet. Until you confirm one here, the program picker will remind you."}</p><div className="form-actions"><Button type="button" variant="secondary" onClick={() => setProgramLimitOpen(false)}>Cancel</Button><Button type="submit">Confirm <ArrowRight size={16} /></Button></div></form></Modal>}
     {bulkAddOpen && <Modal title="Add as bulk" subtitle="Choose one category and team, then add as many members as you need." onClose={() => setBulkAddOpen(false)} wide>
       <form className="form-stack" onSubmit={confirmBulkAdd}>
         <div className="form-grid">

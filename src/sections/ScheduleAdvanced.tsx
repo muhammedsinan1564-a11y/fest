@@ -18,7 +18,7 @@ import {
   cellEndMs, cellStartMs, concurrentCells, detectScheduleConflicts, dueReminders,
   liveStateForCell, loadBookmarks, slotEndMs, slotStartMs, toggleBookmark,
 } from "../lib/fast";
-import { canManage, type SectionProps } from "./common";
+import { canManage, stageManagerSees, type SectionProps } from "./common";
 
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 const fmtDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -26,6 +26,8 @@ const fmtDay = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(undef
 export function ScheduleAdvanced({ fest, user, onChange, notify }: SectionProps) {
   const data = fest.data;
   const canEdit = canManage(user);
+  /** Stage managers only see programs assigned to them; unassigned stays open to all. */
+  const assignablePrograms = data.programs.filter(program => stageManagerSees(program, user));
   const [slots, setSlots] = useState<ScheduleSlot[]>(data.slots);
   const [cells, setCells] = useState<ScheduleCell[]>(data.schedule);
   const [now, setNow] = useState(() => Date.now());
@@ -242,7 +244,7 @@ export function ScheduleAdvanced({ fest, user, onChange, notify }: SectionProps)
                 {canEdit ? <>
                   <select aria-label={`${stage.name} at ${slot.start}`} value={cell?.programId || ""} onChange={e => setCell(stage.id, slot.id, e.target.value)}>
                     <option value="">Select program</option>
-                    {data.programs.filter(p => !cells.some(c => c.programId === p.id && !(c.stageId === stage.id && c.slotId === slot.id))).map(p =>
+                    {assignablePrograms.filter(p => !cells.some(c => c.programId === p.id && !(c.stageId === stage.id && c.slotId === slot.id))).map(p =>
                       <option key={p.id} value={p.id}>{p.name} · {getCategoryName(data, p.categoryId)}</option>)}
                   </select>
                   {cell && program && <div className="fast-cell-meta">

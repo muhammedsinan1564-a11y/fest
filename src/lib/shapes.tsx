@@ -1,4 +1,5 @@
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { ShapeType } from "../types";
 
 export interface ShapeDefinition {
@@ -473,3 +474,186 @@ export function renderSvgShape(
     </svg>
   );
 }
+
+/* ------------------------------------------------------------------------ */
+/* Geometry bridge + legacy stamp API used by the Designer and the export    */
+/* pipeline (lib/exporter.ts). Serialising the library renderers gives the   */
+/* exact same vector in the canvas and in exported SVG / PNG / PDF.          */
+/* ------------------------------------------------------------------------ */
+
+export type ShapeKind = 'starburst' | 'arch' | 'ticket' | 'pill-badge' | 'laurel-ring' | 'diamond-spark' | 'scallop-seal' | 'ribbon-banner' | 'circle';
+
+/** Any shape the Studio can place: the full library or a legacy stamp. */
+export type AnyShape = ShapeKind | ShapeType;
+
+export interface StudioShapeItem {
+  kind: ShapeKind;
+  label: string;
+  viewBox: string;
+}
+
+export const STUDIO_SHAPES: StudioShapeItem[] = [
+  { kind: 'starburst', label: '12-Pt Starburst', viewBox: '0 0 120 120' },
+  { kind: 'arch', label: 'Stage Arch', viewBox: '0 0 120 140' },
+  { kind: 'ticket', label: 'Admit Ticket', viewBox: '0 0 160 96' },
+  { kind: 'scallop-seal', label: 'Winner Seal', viewBox: '0 0 120 120' },
+  { kind: 'diamond-spark', label: '4-Pt Spark', viewBox: '0 0 120 120' },
+  { kind: 'laurel-ring', label: 'Laurel Crest', viewBox: '0 0 120 120' },
+  { kind: 'ribbon-banner', label: 'Award Ribbon', viewBox: '0 0 180 64' },
+  { kind: 'pill-badge', label: 'Capsule Frame', viewBox: '0 0 180 72' },
+  { kind: 'circle', label: 'Spotlight Disc', viewBox: '0 0 120 120' },
+];
+
+function buildStarburstPoints(
+  cx: number,
+  cy: number,
+  spikes: number,
+  outerR: number,
+  innerR: number
+): string {
+  const pts: string[] = [];
+  const total = spikes * 2;
+  for (let i = 0; i < total; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (i * Math.PI) / spikes - Math.PI / 2;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return pts.join(' ');
+}
+
+function buildScallopPath(cx: number, cy: number, lobes: number, rBase: number, amp: number): string {
+  const steps = 120;
+  const parts: string[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * Math.PI * 2;
+    const r = rBase + Math.cos(t * lobes) * amp;
+    const x = cx + Math.cos(t) * r;
+    const y = cy + Math.sin(t) * r;
+    parts.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
+  }
+  parts.push('Z');
+  return parts.join(' ');
+}
+
+export function getShapeGeometry(
+  kind: ShapeKind,
+  fill: string,
+  stroke = 'none',
+  strokeWidth = 0
+): { viewBox: string; innerSvg: string } {
+  const strokeAttrs =
+    stroke && stroke !== 'none' && strokeWidth > 0
+      ? `stroke="${stroke}" stroke-width="${strokeWidth}"`
+      : '';
+
+  switch (kind) {
+    case 'starburst': {
+      const pts = buildStarburstPoints(60, 60, 12, 56, 39);
+      return {
+        viewBox: '0 0 120 120',
+        innerSvg: `<polygon points="${pts}" fill="${fill}" ${strokeAttrs} />`,
+      };
+    }
+    case 'arch':
+      return {
+        viewBox: '0 0 120 140',
+        innerSvg: `<path d="M12 134 V62 A48 48 0 0 1 108 62 V134 Z" fill="${fill}" ${strokeAttrs} />`,
+      };
+    case 'ticket':
+      return {
+        viewBox: '0 0 160 96',
+        innerSvg: `<path d="M8 8 H152 V34 A14 14 0 0 0 152 62 V88 H8 V62 A14 14 0 0 0 8 34 Z" fill="${fill}" ${strokeAttrs} />`,
+      };
+    case 'scallop-seal': {
+      const d = buildScallopPath(60, 60, 16, 48, 6);
+      return {
+        viewBox: '0 0 120 120',
+        innerSvg: `<path d="${d}" fill="${fill}" ${strokeAttrs} />`,
+      };
+    }
+    case 'diamond-spark':
+      return {
+        viewBox: '0 0 120 120',
+        innerSvg: `<path d="M60 4 C64 42 78 56 116 60 C78 64 64 78 60 116 C56 78 42 64 4 60 C42 56 56 42 60 4 Z" fill="${fill}" ${strokeAttrs} />`,
+      };
+    case 'laurel-ring':
+      return {
+        viewBox: '0 0 120 120',
+        innerSvg: `
+          <circle cx="60" cy="60" r="46" fill="none" stroke="${fill}" stroke-width="5" stroke-dasharray="10 6" />
+          <circle cx="60" cy="60" r="36" fill="none" stroke="${fill}" stroke-width="2" opacity="0.7" />
+          <polygon points="60,8 64,18 74,18 66,24 69,34 60,28 51,34 54,24 46,18 56,18" fill="${fill}" />
+        `,
+      };
+    case 'ribbon-banner':
+      return {
+        viewBox: '0 0 180 64',
+        innerSvg: `<path d="M6 8 H174 L160 32 L174 56 H6 L20 32 Z" fill="${fill}" ${strokeAttrs} />`,
+      };
+    case 'pill-badge':
+      return {
+        viewBox: '0 0 180 72',
+        innerSvg: `<rect x="4" y="4" width="172" height="64" rx="32" fill="${fill}" ${strokeAttrs} />`,
+      };
+    case 'circle':
+    default:
+      return {
+        viewBox: '0 0 120 120',
+        innerSvg: `<circle cx="60" cy="60" r="54" fill="${fill}" ${strokeAttrs} />`,
+      };
+  }
+}
+
+const LEGACY_KINDS = new Set<string>(STUDIO_SHAPES.map((s) => s.kind));
+const LIBRARY_TYPES = new Set<string>(SHAPES_LIBRARY.map((s) => s.type));
+
+/**
+ * Vector geometry for any Studio shape, in a form that renders identically on
+ * the live canvas and inside exported SVG / PNG documents.
+ */
+export function shapeGeometryFor(
+  type: AnyShape,
+  fill: string,
+  strokeColor?: string,
+  strokeWidth = 0
+): { viewBox: string; innerSvg: string } {
+  if (LIBRARY_TYPES.has(type) && !LEGACY_KINDS.has(type)) {
+    const shape = SHAPES_LIBRARY.find((s) => s.type === type)!;
+    return {
+      viewBox: shape.viewBox ?? '0 0 100 100',
+      innerSvg: renderToStaticMarkup(shape.render(fill, strokeColor, strokeWidth)),
+    };
+  }
+  return getShapeGeometry(type as ShapeKind, fill, strokeColor ?? 'none', strokeWidth);
+}
+
+export interface StudioShapeProps {
+  kind: AnyShape;
+  fill: string;
+  stroke?: string;
+  strokeWidth?: number;
+  className?: string;
+  opacity?: number;
+}
+
+export const StudioShapeSvg: React.FC<StudioShapeProps> = ({
+  kind,
+  fill,
+  stroke = 'none',
+  strokeWidth = 0,
+  className = 'w-full h-full',
+  opacity = 1,
+}) => {
+  const { viewBox, innerSvg } = shapeGeometryFor(kind, fill, stroke, strokeWidth);
+  return (
+    <svg
+      viewBox={viewBox}
+      preserveAspectRatio="none"
+      className={className}
+      style={{ opacity }}
+      dangerouslySetInnerHTML={{ __html: innerSvg }}
+    />
+  );
+};

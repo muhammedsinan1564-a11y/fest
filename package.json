@@ -12,10 +12,10 @@
     "@supabase/supabase-js": "^2.109.0",
     "@types/qrcode": "^1.5.6",
     "clsx": "2.1.1",
-    "framer-motion": "^14.0.0",
+    "framer-motion": "^14.13.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
-    "lucide-react": "^1.54.0",
+    "lucide-react": "^1.72.0",
     "qrcode": "^1.5.4",
     "react": "19.2.6",
     "react-dom": "19.2.6",
@@ -30,7 +30,7 @@
     "@vitejs/plugin-react": "5.1.1",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
-    "vite": "7.3.2",
+    "vite": "7.3.7",
     "vite-plugin-singlefile": "2.3.0"
   }
 }

@@ -117,9 +117,6 @@ export function loadFonts(names: string[]) {
   if (typeof document === "undefined") return;
   const pending = [...new Set(names)].filter(name => name && !SYSTEM_FONTS.includes(name) && !requested.has(name));
   if (!pending.length) return;
-  // One request per family, default weight only. Google's css2 API rejects a whole
-  // request if any family lacks a requested weight (e.g. single-weight display
-  // fonts), so batching or listing weights would silently drop many fonts.
   pending.forEach(name => {
     requested.add(name);
     const link = document.createElement("link");
@@ -127,4 +124,151 @@ export function loadFonts(names: string[]) {
     link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name).replace(/%20/g, "+")}&display=swap`;
     document.head.appendChild(link);
   });
+}
+
+/* ------------------------------------------------------------------------ */
+/* Studio font catalogue kept for the poster/badge Designer and Setup.       */
+/* (Designer.tsx, Setup.tsx, types.ts and lib/exporter.ts reuse these.)      */
+/* ------------------------------------------------------------------------ */
+
+export type FontCategory = 'display' | 'sans' | 'serif' | 'mono';
+
+export interface StudioFont {
+  id: string;
+  name: string;
+  family: string;
+  category: FontCategory;
+  weights: number[];
+  googleSpec?: string;
+  sample: string;
+}
+
+export interface FontPairing {
+  id: string;
+  label: string;
+  headingFontId: string;
+  bodyFontId: string;
+  monoFontId: string;
+  vibe: string;
+}
+
+export const STUDIO_FONTS: StudioFont[] = [
+  {
+    id: 'space-grotesk',
+    name: 'Space Grotesk',
+    family: "'Space Grotesk', sans-serif",
+    category: 'display',
+    weights: [500, 600, 700],
+    googleSpec: 'Space+Grotesk:wght@500;600;700',
+    sample: 'MAIN STAGE ENCORE 2026',
+  },
+  {
+    id: 'syne',
+    name: 'Syne',
+    family: "'Syne', sans-serif",
+    category: 'display',
+    weights: [600, 700, 800],
+    googleSpec: 'Syne:wght@600;700;800',
+    sample: 'AVANT-GARDE ARTS FEST',
+  },
+  {
+    id: 'archivo-black',
+    name: 'Archivo Black',
+    family: "'Archivo Black', sans-serif",
+    category: 'display',
+    weights: [400],
+    googleSpec: 'Archivo+Black',
+    sample: 'CHAMPIONSHIP FINALS',
+  },
+  {
+    id: 'fraunces',
+    name: 'Fraunces',
+    family: "'Fraunces', serif",
+    category: 'serif',
+    weights: [500, 600, 700, 800],
+    googleSpec: 'Fraunces:opsz,wght@9..144,500..800',
+    sample: 'Kalotsavam Laureate',
+  },
+  {
+    id: 'playfair',
+    name: 'Playfair Display',
+    family: "'Playfair Display', serif",
+    category: 'serif',
+    weights: [600, 700, 800],
+    googleSpec: 'Playfair+Display:wght@600;700;800',
+    sample: 'Grand Literary & Classical Gala',
+  },
+  {
+    id: 'jakarta',
+    name: 'Plus Jakarta Sans',
+    family: "'Plus Jakarta Sans', sans-serif",
+    category: 'sans',
+    weights: [400, 500, 600, 700, 800],
+    googleSpec: 'Plus+Jakarta+Sans:wght@400;500;600;700;800',
+    sample: 'Clear modern festival schedule & badges',
+  },
+  {
+    id: 'dm-sans',
+    name: 'DM Sans',
+    family: "'DM Sans', sans-serif",
+    category: 'sans',
+    weights: [400, 500, 600, 700],
+    googleSpec: 'DM+Sans:opsz,wght@9..40,400..700',
+    sample: 'Stage 02 • Auditorium • 14:30 IST',
+  },
+  {
+    id: 'jetbrains-mono',
+    name: 'JetBrains Mono',
+    family: "'JetBrains Mono', monospace",
+    category: 'mono',
+    weights: [400, 500, 600, 700],
+    googleSpec: 'JetBrains+Mono:wght@400;500;600;700',
+    sample: 'CHEST #204 • 96.5 PTS • GRADE A+',
+  },
+];
+
+export const FONT_PAIRINGS: FontPairing[] = [
+  {
+    id: 'editorial-festival',
+    label: 'Editorial Gala',
+    headingFontId: 'fraunces',
+    bodyFontId: 'jakarta',
+    monoFontId: 'jetbrains-mono',
+    vibe: 'Warm cultural festival & literary arts',
+  },
+  {
+    id: 'kinetic-stage',
+    label: 'Kinetic Arena',
+    headingFontId: 'syne',
+    bodyFontId: 'dm-sans',
+    monoFontId: 'jetbrains-mono',
+    vibe: 'Bold contemporary music & youth biennale',
+  },
+  {
+    id: 'swiss-broadcast',
+    label: 'Swiss Broadcast',
+    headingFontId: 'space-grotesk',
+    bodyFontId: 'jakarta',
+    monoFontId: 'jetbrains-mono',
+    vibe: 'Crisp technical & multi-stage convention',
+  },
+  {
+    id: 'poster-headline',
+    label: 'Headline Impact',
+    headingFontId: 'archivo-black',
+    bodyFontId: 'dm-sans',
+    monoFontId: 'jetbrains-mono',
+    vibe: 'High-impact winner posters & LED walls',
+  },
+];
+
+export function getFontById(fontId: string): StudioFont {
+  return STUDIO_FONTS.find((f) => f.id === fontId) ?? STUDIO_FONTS[0];
+}
+
+/** Loads the Google Fonts stylesheet for one studio font, exactly once. */
+export function ensureGoogleFontLoaded(fontId: string): void {
+  const font = STUDIO_FONTS.find((f) => f.id === fontId);
+  if (!font) return;
+  loadFonts([font.name]);
 }

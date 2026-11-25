@@ -8,7 +8,9 @@ export default function ThemePicker({ compact = false }: { compact?: boolean }) 
   const [theme, setTheme] = useSiteTheme();
   const [open, setOpen] = useState(false);
   const holderRef = useRef<HTMLDivElement>(null);
+  const isLight = typeof document !== "undefined" && document.documentElement.classList.contains("theme-light");
   const active = SITE_THEMES.find(item => item.id === theme) || SITE_THEMES[0];
+  const activeSwatch = isLight ? active.lightSwatch : active.swatch;
 
   useEffect(() => {
     if (!open) return;
@@ -21,17 +23,17 @@ export default function ThemePicker({ compact = false }: { compact?: boolean }) 
 
   return <div className="theme-picker" ref={holderRef}>
     <button type="button" className={`theme-trigger ${compact ? "compact" : ""}`} aria-haspopup="listbox" aria-expanded={open} aria-label={`Colour theme: ${active.name}. Change theme`} title="Change colour theme" onClick={() => setOpen(!open)}>
-      <span className="theme-trigger-swatch" aria-hidden="true">{active.swatch.map(color => <i key={color} style={{ background: color }} />)}</span>
+      <span className="theme-trigger-swatch" aria-hidden="true">{activeSwatch.map(color => <i key={color} style={{ background: color }} />)}</span>
       {!compact && <Palette size={14} />}
     </button>
     <AnimatePresence>
       {open && <motion.div className="theme-menu" role="listbox" aria-label="Colour themes" initial={{ opacity: 0, y: -6, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: .97 }} transition={{ duration: .16 }}>
         <span className="theme-menu-title">PREMIUM THEMES</span>
-        {SITE_THEMES.map(item => <button type="button" role="option" aria-selected={item.id === theme} key={item.id} className={item.id === theme ? "active" : ""} onClick={event => { const button = event.currentTarget; setOpen(false); waveThemeChange(button, () => setTheme(item.id), item.swatch[0]); }}>
-          <span className="theme-option-swatch" aria-hidden="true" style={{ background: `linear-gradient(135deg, ${item.swatch[0]} 0 45%, ${item.swatch[1]} 45% 70%, ${item.swatch[2]} 70%)` }} />
-          <span className="theme-option-copy"><strong>{item.name}</strong><small>{item.tagline}</small></span>
-          {item.id === theme && <Check size={15} className="theme-option-check" />}
-        </button>)}
+        {SITE_THEMES.map(item => { const sw = isLight ? item.lightSwatch : item.swatch; const nm = isLight ? item.lightName : item.name; const tg = isLight ? item.lightTagline : item.tagline; return <button type="button" role="option" aria-selected={item.id === theme} key={item.id} className={item.id === theme ? "active" : ""} onClick={event => { const button = event.currentTarget; setOpen(false); waveThemeChange(button, () => setTheme(item.id), sw[0]); }}>
+          <span className="theme-option-swatch" aria-hidden="true" style={{ background: `linear-gradient(135deg, ${sw[0]} 0 45%, ${sw[1]} 45% 70%, ${sw[2]} 70%)` }} />
+          <span className="theme-option-copy"><strong>{nm}</strong><small>{tg}</small></span>
+          {item.id === theme && <Check className="theme-option-check" size={15} />}
+        </button>; })}
       </motion.div>}
     </AnimatePresence>
   </div>;

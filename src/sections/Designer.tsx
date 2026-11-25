@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import {
@@ -33,10 +33,11 @@ import {
   PageHead,
   RowActions,
 } from "../ui";
-import { buildFontEmbedCSS, fileSlug, renderNodePng, stampPdfPage } from "../lib/exporter";
-import { loadImage, printLogoSrc } from "../lib/brand";
+import { buildFontEmbedCSS, downloadBlob, fileSlug, renderNodePng, stampPdfPage } from "../lib/exporter";
+import { loadImage, printLogoSrc, stampPngTopRight } from "../lib/brand";
 import {
   entryGrade,
+  entryMark,
   getCategoryName,
   getTeamName,
   id,
@@ -47,11 +48,15 @@ import {
   type Member,
   type PosterTemplate,
   type Program,
-  type ShapeType } from "../types";
+  type ProgramEntry,
+  type ShapeType,
+  type Team,
+  templateCoversResult,
+} from "../types";
 import { ALL_FONTS, fontStack, loadFonts } from "../lib/fonts";
 import { backgroundIsLight, fitTextColors } from "../lib/contrast";
 import { confirmDelete, rankedEntries, readImage, teamPoints, type SectionProps } from "./common";
-import { NewDocumentDialog, type NewDocumentConfig } from "./NewDocumentDialog";
+import { documentPixels, NewDocumentDialog, type NewDocumentConfig } from "./NewDocumentDialog";
 import { SHAPES_LIBRARY, renderSvgShape } from "../lib/shapes";
 
 /** Reference widths the stored fontSize values are authored against. */
@@ -161,6 +166,35 @@ function createElement(
   };
 }
 
+/**
+ * Only entries that actually have a mark can hold a place. Without this filter an
+ * unjudged program would print its first *registered* entrant as the "winner".
+ * Cached per program object: every edit replaces the data snapshot, so stale
+ * entries can never be served, while a 500-card export reuses one ranking.
+ */
+const placingCache = new WeakMap<Program, ProgramEntry[]>();
+function placedEntries(program: Program, data: FestData): ProgramEntry[] {
+  let placed = placingCache.get(program);
+  if (!placed) {
+    placed = rankedEntries(program, data).filter((entry) => entryMark(entry, program) !== null);
+    placingCache.set(program, placed);
+  }
+  return placed;
+}
+
+/** Team order + totals, computed once per data snapshot instead of once per text field. */
+const teamTableCache = new WeakMap<FestData, { order: Team[]; points: Map<string, number> }>();
+function teamTable(data: FestData) {
+  let table = teamTableCache.get(data);
+  if (!table) {
+    const points = new Map(data.teams.map((team) => [team.id, teamPoints(team.id, data, false)]));
+    const order = [...data.teams].sort((a, b) => (points.get(b.id) ?? 0) - (points.get(a.id) ?? 0));
+    table = { order, points };
+    teamTableCache.set(data, table);
+  }
+  return table;
+}
+
 function resolveText(
   element: DesignElement,
   data: FestData,
@@ -169,7 +203,7 @@ function resolveText(
   program?: Program,
   memberNumber?: number
 ): string {
-  const entries = program ? rankedEntries(program, data) : [];
+  const entries = program ? placedEntries(program, data) : [];
   const candidateAt = (index: number) => {
     const entry = entries[index];
     if (!entry) return null;
@@ -186,9 +220,9 @@ function resolveText(
     };
   };
 
-  const sortedTeams = [...data.teams].sort(
-    (a, b) => teamPoints(b.id, data, false) - teamPoints(a.id, data, false)
-  );
+  const teams = () => teamTable(data);
+  const sortedTeams = { at: (index: number) => teams().order[index] };
+  const pointsOf = (teamId: string) => `${teams().points.get(teamId) ?? 0} pts`;
 
   switch (element.kind) {
     case "text":
@@ -212,63 +246,63 @@ function resolveText(
 
     // 1st place
     case "winner":
-      return candidateAt(0)?.name || "1st Place Winner";
+      return candidateAt(0)?.name || (program ? "" : "1st Place Winner");
     case "winnerGrade":
-      return candidateAt(0)?.gradeName || "A+";
+      return candidateAt(0)?.gradeName || (program ? "" : "A+");
     case "mark":
     case "winnerPoints":
-      return candidateAt(0)?.gradePoints || "10 pts";
+      return candidateAt(0)?.gradePoints || (program ? "" : "10 pts");
 
     // 2nd place
     case "runner":
-      return candidateAt(1)?.name || "2nd Place Runner";
+      return candidateAt(1)?.name || (program ? "" : "2nd Place Runner");
     case "runnerGrade":
-      return candidateAt(1)?.gradeName || "A";
+      return candidateAt(1)?.gradeName || (program ? "" : "A");
     case "runnerPoints":
-      return candidateAt(1)?.gradePoints || "9 pts";
+      return candidateAt(1)?.gradePoints || (program ? "" : "9 pts");
 
     // 3rd place
     case "secondRunner":
-      return candidateAt(2)?.name || "3rd Place Runner";
+      return candidateAt(2)?.name || (program ? "" : "3rd Place Runner");
     case "secondRunnerGrade":
-      return candidateAt(2)?.gradeName || "B";
+      return candidateAt(2)?.gradeName || (program ? "" : "B");
     case "secondRunnerPoints":
-      return candidateAt(2)?.gradePoints || "8 pts";
+      return candidateAt(2)?.gradePoints || (program ? "" : "8 pts");
 
     // 4th to 10th places
     case "placeName": {
       const p = element.place || 4;
-      return candidateAt(p - 1)?.name || `${p}th Place Candidate`;
+      return candidateAt(p - 1)?.name || (program ? "" : `${p}th Place Candidate`);
     }
     case "placeGrade": {
       const p = element.place || 4;
-      return candidateAt(p - 1)?.gradeName || "Grade";
+      return candidateAt(p - 1)?.gradeName || (program ? "" : "Grade");
     }
     case "placePoints": {
       const p = element.place || 4;
-      return candidateAt(p - 1)?.gradePoints || "Points";
+      return candidateAt(p - 1)?.gradePoints || (program ? "" : "Points");
     }
 
     // Team Mark mode
     case "teamMarkName": {
       if (element.teamId) return getTeamName(data, element.teamId);
       const rank = element.teamRank || 1;
-      return sortedTeams[rank - 1]?.name || `Rank ${rank} Team`;
+      return sortedTeams.at(rank - 1)?.name || `Rank ${rank} Team`;
     }
     case "teamMarkPoints": {
-      if (element.teamId) return `${teamPoints(element.teamId, data, false)} pts`;
+      if (element.teamId) return pointsOf(element.teamId);
       const rank = element.teamRank || 1;
-      const targetTeam = sortedTeams[rank - 1];
-      return targetTeam ? `${teamPoints(targetTeam.id, data, false)} pts` : "0 pts";
+      const targetTeam = sortedTeams.at(rank - 1);
+      return targetTeam ? pointsOf(targetTeam.id) : "0 pts";
     }
     case "teamRankName": {
       const rank = element.teamRank || 1;
-      return sortedTeams[rank - 1]?.name || `Rank ${rank} Team`;
+      return sortedTeams.at(rank - 1)?.name || `Rank ${rank} Team`;
     }
     case "teamRankPoints": {
       const rank = element.teamRank || 1;
-      const targetTeam = sortedTeams[rank - 1];
-      return targetTeam ? `${teamPoints(targetTeam.id, data, false)} pts` : "0 pts";
+      const targetTeam = sortedTeams.at(rank - 1);
+      return targetTeam ? pointsOf(targetTeam.id) : "0 pts";
     }
 
     default:
@@ -365,9 +399,11 @@ export function DesignCanvas({
     const end = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end, { once: true });
+    window.addEventListener("pointercancel", end, { once: true });
   };
   return (
     <div
@@ -381,7 +417,9 @@ export function DesignCanvas({
           : backgroundColor === "transparent"
           ? "repeating-conic-gradient(#d8d8d8 0% 25%, #f7f7f7 0% 50%)"
           : undefined,
-        backgroundSize: background ? undefined : backgroundColor === "transparent" ? "18px 18px" : undefined,
+        // Templates must fill the canvas exactly, at every preview/export size.
+        backgroundSize: background ? "100% 100%" : backgroundColor === "transparent" ? "18px 18px" : undefined,
+        backgroundRepeat: background ? "no-repeat" : undefined,
         backgroundColor: background ? "#fff" : backgroundColor && backgroundColor !== "transparent" ? backgroundColor : isPoster ? "#34243d" : "#f2e8df",
       }}
       onClick={() => editable && onSelect?.("")}
@@ -405,13 +443,19 @@ export function DesignCanvas({
         const effectiveWidth = Math.max(1, element.insideWidth && element.insideWidth > 0 ? element.insideWidth : element.width);
         let fontSizePx = element.fontSize * scale;
         const minimumFontSize = element.minFontSize ?? (isPoster ? 32 : 0);
-        if (isText && minimumFontSize > 0 && displayText.length) {
-          const availableWidth = (effectiveWidth / 100) * width;
-          const approximateWidth = fontSizePx * 0.56 * displayText.length;
-          if (availableWidth > 0 && approximateWidth > availableWidth) {
-            fontSizePx = Math.max(
-              minimumFontSize * scale,
-              availableWidth / Math.max(1, displayText.length * 0.56)
+        if (isText && displayText.length) {
+          // Long names wrap onto extra lines; shrink only when the wrapped
+          // block no longer fits the element's box, so everything stays visible.
+          const availableWidth = Math.max(1, (effectiveWidth / 100) * width);
+          const availableHeight = Math.max(1, (element.height / 100) * height);
+          const lineH = fontSizePx * (element.lineHeight ?? 1.22);
+          const charsPerLine = Math.max(1, Math.floor(availableWidth / Math.max(1, fontSizePx * 0.56)));
+          const lines = Math.max(1, Math.ceil(displayText.length / charsPerLine));
+          const maxLines = Math.max(1, Math.floor(availableHeight / lineH));
+          if (lines > maxLines) {
+            fontSizePx = Math.min(
+              fontSizePx,
+              Math.max(minimumFontSize * scale || 8, fontSizePx * (maxLines / lines))
             );
           }
         }
@@ -552,7 +596,7 @@ function FontPicker({ value, onChange }: { value: string; onChange: (name: strin
     loadFonts(matches);
   }, [query]);
   return (
-    <Field label="Font family" hint={`${ALL_FONTS.length} fonts available. Type to search.`}>
+    <Field label="Font family" hint={`${ALL_FONTS.length} fonts available. Search to narrow the list.`}>
       <input
         value={query}
         onChange={(event) => setQuery(event.target.value)}
@@ -740,10 +784,7 @@ function Inspector({
 
       {!visual && !isShape && (
         <>
-          <FontPicker
-            value={element.fontFamily}
-            onChange={(name) => onUpdate({ fontFamily: name })}
-          />
+          <FontPicker value={element.fontFamily} onChange={(name) => onUpdate({ fontFamily: name })} />
           <div className="inspector-grid">
             <Field label="Font size">
               <input
@@ -779,12 +820,24 @@ function Inspector({
 }
 
 function useDesigner(initial: DesignElement[]) {
-  const [elements, setElements] = useState<DesignElement[]>(initial);
+  const [elements, setElementsState] = useState<DesignElement[]>(initial);
+  // The ref always holds the latest list, so async callers (e.g. addField awaiting a
+  // background brightness check) and rapid clicks never write back a stale copy.
+  const elementsRef = useRef<DesignElement[]>(initial);
   const [past, setPast] = useState<DesignElement[][]>([]);
   const [future, setFuture] = useState<DesignElement[][]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const setElements = useCallback(
+    (next: DesignElement[] | ((previous: DesignElement[]) => DesignElement[])) => {
+      const value = typeof next === "function" ? next(elementsRef.current) : next;
+      elementsRef.current = value;
+      setElementsState(value);
+    },
+    []
+  );
   const snapshot = () => {
-    setPast((history) => [...history.slice(-29), structuredClone(elements)]);
+    const current = structuredClone(elementsRef.current);
+    setPast((history) => [...history.slice(-29), current]);
     setFuture([]);
   };
   const add = (
@@ -795,8 +848,8 @@ function useDesigner(initial: DesignElement[]) {
     extra: Partial<DesignElement> = {}
   ) => {
     snapshot();
-    const item = createElement(kind, elements.length, image, card, color, extra);
-    setElements([...elements, item]);
+    const item = createElement(kind, elementsRef.current.length, image, card, color, extra);
+    setElements((previous) => [...previous, item]);
     setSelectedId(item.id);
   };
   const update = (elementId: string, patch: Partial<DesignElement>, remember = true) => {
@@ -807,19 +860,19 @@ function useDesigner(initial: DesignElement[]) {
   };
   const remove = (elementId: string) => {
     snapshot();
-    setElements(elements.filter((element) => element.id !== elementId));
+    setElements((previous) => previous.filter((element) => element.id !== elementId));
     setSelectedId(null);
   };
   const undo = () => {
     if (!past.length) return;
-    setFuture([elements, ...future]);
+    setFuture([elementsRef.current, ...future]);
     setElements(past[past.length - 1]);
     setPast(past.slice(0, -1));
     setSelectedId(null);
   };
   const redo = () => {
     if (!future.length) return;
-    setPast([...past, elements]);
+    setPast([...past, elementsRef.current]);
     setElements(future[0]);
     setFuture(future.slice(1));
     setSelectedId(null);
@@ -870,7 +923,8 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
     : data.members[0];
   const canvasRef = useRef<HTMLDivElement>(null);
   // The editor canvas always fits inside one box, so portrait and landscape both stay usable.
-  const fit = fitBox(config.width, config.height, 300, 390);
+  const viewportW = typeof window === "undefined" ? 900 : window.innerWidth;
+  const fit = fitBox(config.width, config.height, Math.min(300, Math.max(200, viewportW - 72)), 390);
   const canvasWidth = fit.width;
   const canvasHeight = fit.height;
   const paper = PAPERS[config.paper || "A4 portrait"] || PAPERS["A4 portrait"];
@@ -883,7 +937,7 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
     Math.floor((paper.height - config.margin * 2 + config.gap) / (config.height + config.gap))
   );
   const perPage = columns * rows;
-  const previewScale = 347 / paper.width;
+  const previewScale = Math.min(347, Math.max(220, viewportW - 56)) / paper.width;
   const fitsOnPaper =
     config.width + config.margin * 2 <= paper.width && config.height + config.margin * 2 <= paper.height;
   const changeConfig = (patch: Partial<CardDesign>) => {
@@ -1024,8 +1078,8 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
   const modalScale = Math.min(
     1.65,
     Math.max(
-      0.9,
-      ((typeof window === "undefined" ? 900 : Math.min(window.innerWidth, 900)) - 150) / paper.width
+      0.55,
+      ((typeof window === "undefined" ? 900 : Math.min(window.innerWidth, 900)) - 84) / paper.width
     )
   );
   const selected = designer.elements.find((element) => element.id === designer.selectedId);
@@ -1046,11 +1100,7 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
         action={
           <div className="button-row">
             <span className="saved-indicator">{saved ? "Saved" : "Unsaved changes"}</span>
-            <Button
-              variant="secondary"
-              onClick={startCardDownload}
-              disabled={!data.members.length || !fitsOnPaper}
-            >
+            <Button variant="secondary" disabled={!data.members.length || !fitsOnPaper} onClick={startCardDownload}>
               <Download size={16} /> Download
             </Button>
             <Button onClick={save}>
@@ -1152,10 +1202,7 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
                 <option>Landscape</option>
               </select>
             </Field>
-            <Field
-              label="Paper"
-              hint={`${columns} × ${rows} cards per page · ${perPage} per sheet`}
-            >
+            <Field label="Paper" hint={`${columns} × ${rows} · ${perPage} cards per sheet`}>
               <select
                 value={config.paper || "A4 portrait"}
                 onChange={(event) => changeConfig({ paper: event.target.value })}
@@ -1210,15 +1257,15 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
           <div className="setup-card-preview">
             <span className="eyebrow">LIVE PREVIEW</span>
             <DesignCanvas
-              elements={designer.elements}
               background={background}
               data={data}
-              festName={fest.name}
+              elements={designer.elements}
               festCode={fest.code}
+              festName={fest.name}
+              height={canvasHeight}
               member={sample}
               memberNumber={1}
               width={canvasWidth}
-              height={canvasHeight}
             />
           </div>
         </div>
@@ -1231,31 +1278,17 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
                 DESIGN CANVAS <small>{config.width} × {config.height} MM</small>
               </span>
               <div>
-                <button
-                  aria-label="Undo"
-                  disabled={!designer.canUndo}
-                  onClick={designer.undo}
-                >
+                <button aria-label="Undo" disabled={!designer.canUndo} onClick={designer.undo}>
                   <Undo2 size={17} />
                 </button>
-                <button
-                  aria-label="Redo"
-                  disabled={!designer.canRedo}
-                  onClick={designer.redo}
-                >
+                <button aria-label="Redo" disabled={!designer.canRedo} onClick={designer.redo}>
                   <Redo2 size={17} />
                 </button>
-                <button
-                  aria-label="Zoom out"
-                  onClick={() => setZoom(Math.max(50, zoom - 10))}
-                >
+                <button aria-label="Zoom out" onClick={() => setZoom(Math.max(50, zoom - 10))}>
                   <ZoomOut size={17} />
                 </button>
                 <span>{zoom}%</span>
-                <button
-                  aria-label="Zoom in"
-                  onClick={() => setZoom(Math.min(150, zoom + 10))}
-                >
+                <button aria-label="Zoom in" onClick={() => setZoom(Math.min(150, zoom + 10))}>
                   <ZoomIn size={17} />
                 </button>
               </div>
@@ -1265,10 +1298,10 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
                 <DesignCanvas
                   canvasRef={canvasRef}
                   editable
-                  selectedId={designer.selectedId}
-                  onSelect={designer.setSelectedId}
                   onDragStart={designer.snapshot}
                   onMove={(elementId, x, y) => changeElement(elementId, { x, y }, false)}
+                  onSelect={designer.setSelectedId}
+                  selectedId={designer.selectedId}
                   onImageZoom={(elementId, value) => changeElement(elementId, { zoom: value }, false)}
                   elements={designer.elements}
                   background={background}
@@ -1374,7 +1407,7 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
                 This card is bigger than the chosen paper. Reduce the card size or margin.
               </p>
             )}
-            <Button onClick={startCardDownload} disabled={!data.members.length || !fitsOnPaper}>
+            <Button disabled={!data.members.length || !fitsOnPaper} onClick={startCardDownload}>
               <Download size={16} /> Download ID cards
             </Button>
           </div>
@@ -1398,15 +1431,15 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
               {(pages[0] ?? []).map((member) => (
                 <div key={member.id} className="a4-card">
                   <DesignCanvas
-                    elements={designer.elements}
                     background={background}
                     data={data}
-                    festName={fest.name}
+                    elements={designer.elements}
                     festCode={fest.code}
+                    festName={fest.name}
+                    height={config.height * previewScale}
                     member={member}
                     memberNumber={chestNumber(member)}
                     width={config.width * previewScale}
-                    height={config.height * previewScale}
                   />
                 </div>
               ))}
@@ -1423,15 +1456,15 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
           {pages.flat().map((member) => (
             <div key={member.id} data-card-export>
               <DesignCanvas
-                elements={designer.elements}
                 background={background}
                 data={data}
-                festName={fest.name}
+                elements={designer.elements}
                 festCode={fest.code}
+                festName={fest.name}
+                height={config.height * 4}
                 member={member}
                 memberNumber={chestNumber(member)}
                 width={config.width * 4}
-                height={config.height * 4}
               />
             </div>
           ))}
@@ -1439,11 +1472,9 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
       )}
       {downloadOpen && (
         <DownloadPreview
+          format={`PDF · ${config.paper || "A4 portrait"} · ${pages.length} ${pages.length === 1 ? "page" : "pages"}`}
+          subtitle={`${data.members.length} cards · ${paper.width} × ${paper.height} mm each`}
           title="ID card preview"
-          subtitle={`${data.members.length} cards · ${pages.length} page${
-            pages.length === 1 ? "" : "s"
-          } · ${config.paper || "A4 portrait"}`}
-          format={`PDF · ${paper.width} × ${paper.height} mm`}
           onClose={() => setDownloadOpen(false)}
           onConfirm={confirmCardDownload}
         >
@@ -1465,15 +1496,15 @@ export function IDCardSection({ fest, onChange, notify }: SectionProps) {
                   {page.map((member) => (
                     <div key={member.id} className="a4-card">
                       <DesignCanvas
-                        elements={designer.elements}
                         background={background}
                         data={data}
-                        festName={fest.name}
+                        elements={designer.elements}
                         festCode={fest.code}
+                        festName={fest.name}
+                        height={config.height * modalScale}
                         member={member}
                         memberNumber={chestNumber(member)}
                         width={config.width * modalScale}
-                        height={config.height * modalScale}
                       />
                     </div>
                   ))}
@@ -1525,7 +1556,8 @@ function PosterEditor({
   const selected = designer.elements.find((element) => element.id === designer.selectedId) || null;
 
   const canvasProgram = data.programs.find((program) => program.status === 5) || data.programs[0];
-  const posterFit = fitBox(Math.max(1, bgWidth || 1080), Math.max(1, bgHeight || 1350), 360, 470);
+  const posterMaxW = typeof window === "undefined" ? 360 : Math.min(360, Math.max(210, window.innerWidth - 72));
+  const posterFit = fitBox(Math.max(1, bgWidth || 1080), Math.max(1, bgHeight || 1350), posterMaxW, 470);
 
   const recolorText = async (source: string, announce = true) => {
     if (!source) return;
@@ -1644,8 +1676,9 @@ function PosterEditor({
           <div className={`poster-preview-stage ${previewMode ? "pure" : ""}`}>
             <DesignCanvas
               editable={!previewMode}
-              selectedId={previewMode ? null : designer.selectedId}
-              onSelect={(id) => { if (!previewMode) { designer.setSelectedId(id); } }}
+              onSelect={(id) => {
+                if (!previewMode) designer.setSelectedId(id);
+              }}
               onDragStart={designer.snapshot}
               onMove={(elementId, x, y) => designer.update(elementId, { x, y }, false)}
               onImageZoom={(elementId, value) => designer.update(elementId, { zoom: value }, false)}
@@ -1863,17 +1896,28 @@ function PosterEditor({
                 {designer.elements.map((element) => {
                   const isSelected = element.id === designer.selectedId;
                   return (
-                    <button
+                    <div
                       key={element.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isSelected}
                       className={`poster-layer-row ${isSelected ? "active" : ""} ${element.hidden ? "hidden" : ""}`}
                       onClick={() => designer.setSelectedId(element.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          designer.setSelectedId(element.id);
+                        }
+                      }}
                     >
                       <span className="poster-layer-icon">{layerIcon(element.kind)}</span>
                       <span className="poster-layer-name">
                         {element.layerName || LABELS[element.kind] || element.kind}
                       </span>
                       <button
+                        type="button"
                         className="poster-layer-eye"
+                        aria-label={element.hidden ? "Show layer" : "Hide layer"}
                         title={element.hidden ? "Show layer" : "Hide layer"}
                         onClick={(event) => {
                           event.stopPropagation();
@@ -1882,7 +1926,7 @@ function PosterEditor({
                       >
                         {element.hidden ? "○" : "●"}
                       </button>
-                    </button>
+                    </div>
                   );
                 })}
                 {!designer.elements.length && (
@@ -2054,7 +2098,12 @@ function PosterEditor({
                   <button className="poster-collapse-toggle" onClick={() => setShowShadow(!showShadow)}>
                     <ChevronDown size={14} style={{ transform: showShadow ? "none" : "rotate(-90deg)" }} />
                     Shadow
-                    <span className="poster-collapse-action" onClick={(e) => { e.stopPropagation(); updateSelected({ shadowColor: undefined, shadowBlur: undefined, shadowX: undefined, shadowY: undefined }); }}>Remove</span>
+                    <span
+                      className="poster-collapse-action"
+                      onClick={(e) => { e.stopPropagation(); updateSelected({ shadowColor: undefined, shadowBlur: undefined, shadowX: undefined, shadowY: undefined }); }}
+                    >
+                      Remove
+                    </span>
                   </button>
                   {showShadow && (
                     <div className="poster-advanced-body">
@@ -2079,9 +2128,9 @@ function PosterEditor({
       {/* Shapes modal */}
       {showShapesModal && (
         <Modal
-          title="Add Shapes & Mathematical Symbols"
-          subtitle="Choose geometric figures, arrows, badges or decorative symbols"
           onClose={() => setShowShapesModal(false)}
+          subtitle="Choose geometric figures, arrows, badges or decorative symbols"
+          title="Add Shapes & Mathematical Symbols"
           wide
         >
           <div className="shapes-picker-container">
@@ -2148,9 +2197,7 @@ function RangeDialog({
   onClose: () => void;
   onSave: (from: number | null, to: number | null) => void;
 }) {
-  const [from, setFrom] = useState(
-    template.fromResult == null ? "" : String(template.fromResult)
-  );
+  const [from, setFrom] = useState(template.fromResult == null ? "" : String(template.fromResult));
   const [to, setTo] = useState(template.toResult == null ? "" : String(template.toResult));
   const [error, setError] = useState("");
   const submit = () => {
@@ -2166,11 +2213,7 @@ function RangeDialog({
     onSave(start, end);
   };
   return (
-    <Modal
-      title={`Result range · ${template.name}`}
-      subtitle="Choose which published results use this template. Leave both empty to use it for every result."
-      onClose={onClose}
-    >
+    <Modal title={`Result range · ${template.name}`} onClose={onClose} subtitle="Choose which published results use this template. Leave both empty to use it for every result.">
       <div className="form-stack">
         <div className="form-grid">
           <Field label="Starting result">
@@ -2201,7 +2244,7 @@ function RangeDialog({
         </div>
         {error && <p className="warn-text">{error}</p>}
         <div className="form-actions">
-          <Button variant="secondary" onClick={onClose}>
+          <Button onClick={onClose} variant="secondary">
             Cancel
           </Button>
           <Button onClick={submit}>
@@ -2220,6 +2263,9 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [rangeId, setRangeId] = useState<string | null>(null);
+  const [previewProgramId, setPreviewProgramId] = useState<string | null>(null);
+  const [posterDownloadOpen, setPosterDownloadOpen] = useState(false);
+  const posterRef = useRef<HTMLDivElement>(null);
 
   const viewing = fest.data.posters.find((template) => template.id === viewingId);
   const ranging = fest.data.posters.find((template) => template.id === rangeId);
@@ -2245,6 +2291,9 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
 
   const handleCreateFromNewDoc = (config: NewDocumentConfig) => {
     const isTeamMark = config.templateType === "teamMark";
+    // Inches/cm/mm/pt/pc at the chosen resolution become real pixels, so the
+    // studio canvas and the PNG export use the exact intended size.
+    const pixels = documentPixels(config);
     const selectedBackground =
       config.backgroundContents === "Custom"
         ? config.customBgColor
@@ -2269,12 +2318,12 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
       name: config.name,
       templateType: config.templateType,
       backgroundColor: selectedBackground,
-      backgroundWidth: config.width,
-      backgroundHeight: config.height,
-      width: config.width,
-      height: config.height,
+      backgroundWidth: pixels.width,
+      backgroundHeight: pixels.height,
+      width: pixels.width,
+      height: pixels.height,
       resolution: config.resolution,
-      unit: config.unit,
+      unit: "px",
       elements: [
         {
           ...createElement("text", 0),
@@ -2350,14 +2399,14 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
   if (editingTemplate !== null)
     return (
       <PosterEditor
-        key={editingTemplate.id}
         fest={fest}
-        template={editingTemplate}
+        key={editingTemplate.id}
         notify={notify}
         onBack={() => {
           setEditingTemplate(null);
           setIsCreatingNew(false);
         }}
+        template={editingTemplate}
         onSave={(saved) => {
           onChange(
             (data) => ({
@@ -2377,30 +2426,116 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
       />
     );
 
-  if (viewing)
+  if (viewing) {
+    const docWidth = Math.max(1, viewing.width ?? viewing.backgroundWidth ?? 1080);
+    const docHeight = Math.max(1, viewing.height ?? viewing.backgroundHeight ?? 1350);
+    const covered = fest.data.programs
+      .filter((program) => program.status === 5 && templateCoversResult(viewing, program.resultNumber))
+      .sort((a, b) => (a.resultNumber ?? 0) - (b.resultNumber ?? 0));
+    const previewProgram = covered.find((program) => program.id === previewProgramId) || covered[0] || sample;
+    // Real template proportions; DesignCanvas still scales from width / POSTER_BASE.
+    const vw = typeof window === "undefined" ? 900 : window.innerWidth;
+    const stage = fitBox(docWidth, docHeight, Math.min(390, Math.max(220, vw - 56)), 505);
+    const modalStage = fitBox(docWidth, docHeight, Math.min(320, Math.max(200, vw - 84)), 420);
+
+    const startPosterDownload = () => {
+      if (askToDownload(`"${viewing.name}" as a ${docWidth} × ${docHeight} px PNG`)) setPosterDownloadOpen(true);
+    };
+    const confirmPosterDownload = async (report: (message: string) => void) => {
+      const node = posterRef.current;
+      if (!node) throw new Error("The poster is still loading. Please try again in a moment.");
+      report("Preparing fonts…");
+      // The exact preview DOM, rendered up to the template's native pixel width.
+      let png = await renderNodePng(node, {
+        pixelRatio: Math.min(6, Math.max(1, docWidth / Math.max(1, node.offsetWidth))),
+        style: { borderRadius: "0" },
+      });
+      report("Adding fest logo…");
+      try {
+        png = await stampPngTopRight(png, printLogoSrc(fest.data.festLogo));
+      } catch {
+        /* stamping is best-effort */
+      }
+      report("Saving PNG…");
+      const blob = await (await fetch(png)).blob();
+      const suffix = previewProgram?.resultNumber ? `-result-${previewProgram.resultNumber}` : "";
+      downloadBlob(blob, `${fileSlug(viewing.name)}${suffix}.png`);
+      notify("Poster downloaded exactly as previewed");
+    };
+
     return (
       <>
         <PageHead
-          back={() => setViewingId(null)}
+          back={() => {
+            setViewingId(null);
+            setPreviewProgramId(null);
+          }}
           eyebrow="CREATE / PREVIEW"
           title={viewing.name}
           description={`A live preview of your saved template · ${rangeLabel(viewing)}`}
+          action={
+            <Button onClick={startPosterDownload}>
+              <Download size={16} /> Download PNG
+            </Button>
+          }
         />
+        {covered.length > 1 && (
+          <div className="poster-result-picker">
+            <Field label="Preview with result" hint={`${covered.length} published results use this template`}>
+              <select value={previewProgram?.id ?? ""} onChange={(event) => setPreviewProgramId(event.target.value)}>
+                {covered.map((program) => (
+                  <option key={program.id} value={program.id}>
+                    #{program.resultNumber} · {program.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
         <div className="poster-preview-center">
           <DesignCanvas
-            elements={viewing.elements}
+            canvasRef={posterRef}
             background={viewing.background}
             backgroundColor={viewing.backgroundColor}
             data={fest.data}
+            elements={viewing.elements}
             festName={fest.name}
-            program={sample}
+            height={stage.height}
+            program={previewProgram}
             surface="poster"
-            width={390}
-            height={505}
+            width={stage.width}
           />
         </div>
+        {posterDownloadOpen && (
+          <DownloadPreview
+            title="Poster preview"
+            subtitle={
+              previewProgram
+                ? `${previewProgram.name}${previewProgram.resultNumber ? ` · Result #${previewProgram.resultNumber}` : ""}`
+                : viewing.name
+            }
+            format={`PNG · ${docWidth} × ${docHeight} px`}
+            onClose={() => setPosterDownloadOpen(false)}
+            onConfirm={confirmPosterDownload}
+          >
+            <div className="poster-download-preview">
+              <DesignCanvas
+                background={viewing.background}
+                backgroundColor={viewing.backgroundColor}
+                data={fest.data}
+                elements={viewing.elements}
+                festName={fest.name}
+                height={modalStage.height}
+                program={previewProgram}
+                surface="poster"
+                width={modalStage.width}
+              />
+            </div>
+          </DownloadPreview>
+        )}
       </>
     );
+  }
 
   return (
     <>
@@ -2422,17 +2557,28 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
                   aria-label={`Preview ${template.name}`}
                 >
                   <div className="template-mini-scale">
-                    <DesignCanvas
-                      elements={template.elements}
-                      background={template.background}
-                      backgroundColor={template.backgroundColor}
-                      data={fest.data}
-                      festName={fest.name}
-                      program={sample}
-                      surface="poster"
-                      width={POSTER_BASE}
-                      height={440}
-                    />
+                    {(() => {
+                      // Thumbnails keep each template's true proportions; text scales with width.
+                      const thumb = fitBox(
+                        Math.max(1, template.width ?? template.backgroundWidth ?? 1080),
+                        Math.max(1, template.height ?? template.backgroundHeight ?? 1350),
+                        Math.round(POSTER_BASE * 0.66),
+                        Math.round(440 * 0.66)
+                      );
+                      return (
+                        <DesignCanvas
+                          background={template.background}
+                          backgroundColor={template.backgroundColor}
+                          data={fest.data}
+                          elements={template.elements}
+                          festName={fest.name}
+                          height={thumb.height}
+                          program={sample}
+                          surface="poster"
+                          width={thumb.width}
+                        />
+                      );
+                    })()}
                   </div>
                 </button>
                 <div className="template-menu-holder">
@@ -2530,8 +2676,8 @@ export function PosterTemplatesSection({ fest, user, onChange, notify }: Section
 
       {ranging && (
         <RangeDialog
-          template={ranging}
           onClose={() => setRangeId(null)}
+          template={ranging}
           onSave={(from, to) => {
             onChange(
               (data) => ({

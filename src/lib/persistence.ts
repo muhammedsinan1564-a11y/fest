@@ -136,3 +136,82 @@ export function watchFest(festId: string, onData: (data: FestData) => void) {
   }).subscribe();
   return () => { void supabase.removeChannel(channel); };
 }
+
+/* ------------------------------------------------------------------------ */
+/* Legacy offline workspace store kept for the app shell and toolkit         */
+/* (App.tsx, Tools.tsx). The cloud layer above runs alongside it.           */
+/* ------------------------------------------------------------------------ */
+
+export const FESTIZE_STORAGE_KEY = "festize_studio_workspace_v2";
+export const FESTIZE_SCHEMA_VERSION = 2;
+
+export interface PersistedEnvelope<T> {
+  schemaVersion: number;
+  savedAt: string;
+  payload: T;
+}
+
+export function loadPersistedState<T>(fallback: T, key = FESTIZE_STORAGE_KEY): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<PersistedEnvelope<T>>;
+    if (parsed && parsed.payload && typeof parsed.payload === "object") {
+      return {
+        ...fallback,
+        ...parsed.payload,
+      };
+    }
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function savePersistedState<T>(
+  payload: T,
+  key = FESTIZE_STORAGE_KEY
+): { ok: boolean; savedAt: string } {
+  const savedAt = new Date().toISOString();
+  if (typeof window === "undefined") return { ok: false, savedAt };
+  try {
+    const envelope: PersistedEnvelope<T> = {
+      schemaVersion: FESTIZE_SCHEMA_VERSION,
+      savedAt,
+      payload,
+    };
+    window.localStorage.setItem(key, JSON.stringify(envelope));
+    return { ok: true, savedAt };
+  } catch {
+    return { ok: false, savedAt };
+  }
+}
+
+export function clearPersistedState(key = FESTIZE_STORAGE_KEY): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function getStorageSizeKb(key = FESTIZE_STORAGE_KEY): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(key) ?? "";
+    return Number(((raw.length * 2) / 1024).toFixed(1));
+  } catch {
+    return 0;
+  }
+}
+
+export async function readImportedJsonFile<T>(file: File, fallback: T): Promise<T> {
+  const text = await file.text();
+  const parsed = JSON.parse(text) as Partial<PersistedEnvelope<T>> & Partial<T>;
+  if (parsed && "payload" in parsed && parsed.payload && typeof parsed.payload === "object") {
+    return { ...fallback, ...(parsed.payload as T) };
+  }
+  return { ...fallback, ...(parsed as T) };
+}

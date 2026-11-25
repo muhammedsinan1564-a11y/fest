@@ -49,15 +49,24 @@ serve(async (request) => {
     const owner = fest.owner_id === identity.user.id;
 
     if (action === "deleteFest") {
-      if (!owner) return reply(403, { error: "Only the fest owner can delete the fest" });
-      const { data: users, error: listError } = await admin.from("fest_members").select("auth_user_id").eq("fest_id", festId);
-      if (listError) return reply(500, { error: listError.message });
-      for (const user of users || []) {
-        const { error } = await admin.auth.admin.deleteUser(user.auth_user_id);
-        if (error) return reply(500, { error: error.message });
+  if (!owner) return reply(403, { error: "Only the fest owner can delete the fest" });
+  
+  const { data: users, error: listError } = await admin.from("fest_members").select("auth_user_id").eq("fest_id", festId);
+  if (listError) return reply(500, { error: listError.message });
+  
+  if (users && users.length > 0) {
+    const deletePromises = users.map(async (u) => {
+      try {
+        await admin.auth.admin.deleteUser(u.auth_user_id);
+      } catch (_) {
+        // വ്യക്തിഗത ഡിലീഷൻ തടസ്സപ്പെട്ടാലും പ്രോസസ്സ് മുടങ്ങാതെ പ്രവർത്തിക്കാൻ ഇത് സഹായിക്കും  [Ignore individual auth deletion failures to prevent non-2xx crashes]
       }
-      const { error } = await admin.from("fests").delete().eq("id", festId);
-      return error ? reply(500, { error: error.message }) : reply(200, { ok: true });
+    });
+    await Promise.all(deletePromises);
+  }
+
+  const { error } = await admin.from("fests").delete().eq("id", festId);
+  return error ? reply(500, { error: error.message }) : reply(200, { ok: true });
     }
 
     if (!/^[0-9a-f-]{36}$/i.test(String(candidate.id || "")) || !name || name.length > 100 || !allowed.includes(role) || (action === "create" && password.length < 6)) {

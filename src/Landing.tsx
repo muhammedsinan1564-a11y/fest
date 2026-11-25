@@ -1,17 +1,55 @@
 import { motion, useMotionValue, useSpring, useTransform, type MotionValue } from "framer-motion";
 import { ArrowLeft, ArrowRight, Bell, Check, ChevronDown, Globe, IdCard, KeyRound, ListChecks, Minus, MonitorSpeaker, Play, Plus, Printer, ShieldCheck, Users, UsersRound, Eye, EyeOff } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { readTheme } from "./lib/theme";
 import { FestizeLogo } from "./FestizeLogo";
 
-const PAIN_POINTS = [
+interface PainPoint {
+  icon: string;
+  name: string;
+  text: string;
+}
+
+interface Step {
+  number: string;
+  name: string;
+  text: string;
+}
+
+interface Feature {
+  Icon: typeof ListChecks;
+  tone: string;
+  name: string;
+  text: string;
+}
+
+interface Role {
+  Icon: typeof KeyRound;
+  name: string;
+  tagline: string;
+  points: string[];
+}
+
+interface Edition {
+  tone: string;
+  badge: string;
+  intro: string;
+  items: string[];
+}
+
+interface Faq {
+  question: string;
+  answer: string;
+}
+
+const PAIN_POINTS: PainPoint[] = [
   { icon: "❌", name: "Spreadsheet Chaos", text: "Formulas break, sheets get accidentally overwritten, and nobody knows which version is the true final tally." },
   { icon: "👀", name: "Score Disputes", text: "When teams question a judgment, there is no verifiable digital audit trail showing individual judges' marks." },
   { icon: "📱", name: "WhatsApp Overload", text: "Hundreds of frantic group messages, missed calls between stage managers, and lost result paper slips." },
   { icon: "⏱️", name: "Valedictory Delays", text: "Hours lost manually calculating championship points, typing winner posters, and handwriting certificates." },
 ];
 
-const STEPS = [
+const STEPS: Step[] = [
   { number: "01", name: "Import & Roster", text: "Paste rows or upload Excel sheets. Unique participant codes (#42@123) are generated automatically." },
   { number: "02", name: "Program Rules", text: "Configure events, category limits, individual vs group quotas, and specific grade point scales." },
   { number: "03", name: "Stage & Timetable", text: "Interactive schedule prevents student clashes across overlapping stages. Floor tracking moves in real time." },
@@ -19,7 +57,7 @@ const STEPS = [
   { number: "05", name: "Instant Publish", text: "Approved results generate result posters, live public leaderboards, and Excel call sheets." },
 ];
 
-const FEATURES = [
+const FEATURES: Feature[] = [
   { Icon: ListChecks, tone: "gold", name: "Program & Rule Engine", text: "Support for individual and group competitions, category quotas, team member caps, and custom grade scales." },
   { Icon: MonitorSpeaker, tone: "mint", name: "Stage Control & Timetable", text: "Conflict-aware timetable with start and end times that strictly prevents any student from being scheduled simultaneously in two programs." },
   { Icon: Bell, tone: "peach", name: "Blind Judging & Stage Bell", text: "Evaluators only see anonymous code letters. Features realistic acoustic bell tones with continuous ringing and automated timer warning dings." },
@@ -28,7 +66,7 @@ const FEATURES = [
   { Icon: Printer, tone: "gold", name: "Excel & PDF Call Sheets", text: "Generate ready-to-print official Excel spreadsheets and PDF sheets with group combos, team rosters, and signature columns." },
 ];
 
-const ROLES = [
+const ROLES: Role[] = [
   { Icon: KeyRound, name: "Main Administrator", tagline: "Total Command Over Every Stage, Rule & Result", points: ["Create, rename, configure and permanently safeguard entire festival databases.", "Full role-based access delegation for judges, stage managers, team managers, and monitors.", "Custom grade point scales (Standard, Simple, Custom) bound to individual programs.", "Timetable scheduler with automated student conflict prevention across overlapping stages."] },
   { Icon: ShieldCheck, name: "Judges", tagline: "Fair Marks Without Names or Pressure", points: ["See only the programs assigned to them, nothing else.", "Score anonymous code letters out of 100 — never names or teams.", "Grades and grade points calculated live from the program's own scale.", "A one-tap acoustic stage bell for timing performances."] },
   { Icon: MonitorSpeaker, name: "Stage Managers", tagline: "Keep Every Stage Moving on Time", points: ["Live stage control with the full Reporting → Published flow.", "Stage and venue details with photos at their fingertips.", "The shared timetable, always current on every device.", "Bell cues for openings, warnings, and closings."] },
@@ -37,13 +75,13 @@ const ROLES = [
   { Icon: Users, name: "Participants & Parents", tagline: "One Scan Away From Their Moment", points: ["Members sign in with their personal code — or scan their ID card QR.", "A personal dashboard with their programs, finished and upcoming.", "Published results with poster templates, numbered by release.", "The public team scoreboard, live as points are released."] },
 ];
 
-const EDITIONS = [
+const EDITIONS: Edition[] = [
   { tone: "mint", badge: "Standard", intro: "For a small fest with many participants and programs.", items: ["Up to 200 participants", "Up to 10 teams", "Up to 40 programs", "Up to 4 stages", "Excel & PDF Reports + ID Cards"] },
   { tone: "gold", badge: "Full Fest", intro: "For a full-size institutional fest with many participants and programs.", items: ["Up to 500 participants", "Up to 25 teams", "Up to 100 programs", "Real-time Cloud Sync across all devices", "Priority Technical Support"] },
   { tone: "lilac", badge: "Custom", intro: "For an event whose size or requirements do not fit the standard plans.", items: ["Limitless participants", "Limitless teams", "Limitless programs", "Real-time Cloud Sync across all devices", "Bespoke setup tailored to your event"] },
 ];
 
-const FAQS = [
+const FAQS: Faq[] = [
   { question: "Can we run Festize completely offline during the festival?", answer: "Yes! Festize is built as a single-file application with persistent offline storage. You can run all judging, scheduling, stage control, and ID card printing locally without an active internet connection. When connected, it syncs live to the cloud database." },
   { question: "How does anonymous code-based judging work?", answer: "When candidates report in, each one receives a unique code letter. Judges see only those letters — never names or teams — and enter marks out of 100. Grades and grade points are calculated automatically from the grade scale bound to that program, and the full trail of every judge's marks is kept for review." },
   { question: "Can a student be accidentally scheduled in two programs at the same time?", answer: "No. The timetable checks every placement as you make it. A program can only occupy one slot, and if two programs share even a single member, Festize refuses to place them in overlapping times — on any stage — and tells you exactly which member clashes." },
@@ -51,15 +89,8 @@ const FAQS = [
   { question: "Can we print ID cards with 3 mm bleed and crop marks on standard A4 paper?", answer: "Yes. The ID Card Studio supports preset and fully custom card sizes, multiple paper options including A4, adjustable margins and gaps, optional crop marks, and automatic multi-card layout. The PDF export matches the on-screen preview exactly." },
 ];
 
-/** The first screen always uses the Obsidian Gold palette. */
-const LANDING_THEME = "obsidian";
 const OBSIDIAN_GOLD_RGB = "217,169,79";
 
-/**
- * Pointer-reactive constellation drawn on a fixed, full-viewport canvas behind the
- * whole first screen: drifting dots link to their neighbours, light up near the
- * cursor, are gently pushed aside, and draw threads to the pointer.
- */
 function Constellation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colorRef = useRef(OBSIDIAN_GOLD_RGB);
@@ -169,15 +200,8 @@ const NAV_LINKS = [
 ];
 
 const scrollToSection = (target: string) => document.getElementById(target)?.scrollIntoView({ behavior: "smooth" });
+const EASE_OUT: [number, number, number, number] = [.2, .8, .2, 1];
 
-const EASE_OUT = [.2, .8, .2, 1] as const;
-
-/**
- * `introActive`: the opening intro is still covering this screen, so hold the
- * entrance animations until it hands over.
- * `logoHandoff`: the intro's logo just landed exactly on the hero logo, so the
- * hero logo appears instantly instead of animating in.
- */
 export function Landing({ onExplore, onJoin, introActive = false, logoHandoff = false }: { onExplore: () => void; onJoin: () => void; introActive?: boolean; logoHandoff?: boolean }) {
   const ready = !introActive;
   const landingRef = useRef<HTMLDivElement>(null);
@@ -186,7 +210,6 @@ export function Landing({ onExplore, onJoin, introActive = false, logoHandoff = 
   const rawX = useMotionValue(0); const rawY = useMotionValue(0);
   const mx = useSpring(rawX, { stiffness: 60, damping: 18 }); const my = useSpring(rawY, { stiffness: 60, damping: 18 });
 
-  // The nav wordmark stays out of the way while the big hero brand is on screen.
   useEffect(() => {
     const brand = brandRef.current;
     if (!brand || typeof IntersectionObserver === "undefined") return;
@@ -195,40 +218,38 @@ export function Landing({ onExplore, onJoin, introActive = false, logoHandoff = 
     return () => observer.disconnect();
   }, []);
 
-  // Lock the first screen to Obsidian Gold. The visitor's own theme choice stays
-  // saved and is restored as soon as they leave this screen.
   useLayoutEffect(() => {
-    document.documentElement.dataset.theme = LANDING_THEME;
+    // The landing screen keeps the visitor's chosen light/dark palette.
+    document.documentElement.dataset.theme = readTheme();
     return () => { document.documentElement.dataset.theme = readTheme(); };
   }, []);
 
-  // One pointer tracker for the whole page: drives the spotlight and the hero card parallax.
-  const trackPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+  const trackPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     rawX.set(event.clientX / window.innerWidth - .5);
     rawY.set(event.clientY / window.innerHeight - .5);
     landingRef.current?.style.setProperty("--spot-x", `${event.clientX}px`);
     landingRef.current?.style.setProperty("--spot-y", `${event.clientY}px`);
   };
+
   return <div className="landing dark-root" ref={landingRef} onPointerMove={trackPointer} onPointerLeave={() => { rawX.set(0); rawY.set(0); }}>
     <div className="landing-fx" aria-hidden="true">
       <div className="hero-aurora"><i className="aurora-a" /><i className="aurora-b" /><i className="aurora-c" /></div>
       <div className="hero-spotlight" />
-      <Constellation />
+      <Constellation/>
     </div>
     <motion.header className="fest-nav" initial={{ opacity: 0, y: -14 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: -14 }} transition={{ duration: .6, delay: ready ? .15 : 0, ease: EASE_OUT }}>
-      <button className={`wordmark small nav-brand${brandInView ? " is-hidden" : ""}`} tabIndex={brandInView ? -1 : 0} aria-hidden={brandInView || undefined} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Festize home"><FestizeLogo className="nav-logo" title={null} />festize<span>.</span></button>
+      <button className={`wordmark small nav-brand${brandInView ? " is-hidden" : ""}`} tabIndex={brandInView ? -1 : 0} aria-hidden={brandInView || undefined} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Festize home"><FestizeLogo className="nav-logo" title={null} withWordmark={false} size={30} />festize<span>.</span></button>
       <nav className="fest-nav-links" aria-label="Page sections">
         {NAV_LINKS.map(link => <button key={link.target} onClick={() => scrollToSection(link.target)}>{link.label}</button>)}
       </nav>
     </motion.header>
     <section className="dark-hero hero-left">
       <div className="dark-hero-glow" aria-hidden="true" />
-      {HERO_CHIPS.map((chip, index) => <FloatingChip key={chip.className} chip={chip} mx={mx} my={my} index={index} ready={ready} />)}
+      {HERO_CHIPS.map((chip, index) => <FloatingChip chip={chip} index={index} key={chip.className} mx={mx} my={my} ready={ready} />)}
       <div className="dark-hero-content">
         <motion.span className="hero-badge" initial={{ opacity: 0, y: -12 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: -12 }} transition={{ duration: .6, delay: ready ? .28 : 0 }}><span className="badge-dot" /> SCHOOL ARTS &amp; CULTURAL FEST SOFTWARE</motion.span>
         <h1 className="hero-brand" ref={brandRef}>
-          {/* The intro's logo lands exactly here, so this one stays hidden until the hand-over. */}
-          <span id="hero-logo" className={`hero-logo-slot${ready && !logoHandoff ? " pop-in" : ""}`} style={{ opacity: introActive ? 0 : 1 }} aria-hidden="true"><FestizeLogo title={null} /></span>
+          <span id="hero-logo" className={`hero-logo-slot${ready && !logoHandoff ? " pop-in" : ""}`} style={{ opacity: introActive ? 0 : 1 }} aria-hidden="true"><FestizeLogo title={null} withWordmark={false} size={76} /></span>
           <motion.span className="hero-wordmark-big" initial={{ opacity: 0, scale: 1.12, filter: "blur(12px)" }} animate={ready ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 1.12, filter: "blur(12px)" }} transition={{ duration: .75, delay: ready ? (logoHandoff ? .02 : .14) : 0, ease: EASE_OUT }}>festize<span>.</span></motion.span>
         </h1>
         <p className="hero-tagline">
@@ -239,7 +260,7 @@ export function Landing({ onExplore, onJoin, introActive = false, logoHandoff = 
         </p>
         <motion.p className="hero-sub" initial={{ opacity: 0, y: 16 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }} transition={{ delay: ready ? .92 : 0, duration: .7 }}>Set up participants and programs, keep stages moving, collect judges' marks with zero bias, and publish approved results in one unified place. From 50 to 5,000 participants — run your festival with complete confidence.</motion.p>
         <motion.div className="dark-hero-ctas" initial={{ opacity: 0, y: 16 }} animate={ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }} transition={{ delay: ready ? 1.06 : 0, duration: .7 }}>
-          <button className="cta-gold" onClick={onExplore}><span className="cta-sheen" aria-hidden="true" /><Play size={15} fill="currentColor" /> Explore Platform</button>
+          <button className="cta-gold" onClick={onExplore}><span className="cta-sheen" aria-hidden="true" /><Play fill="currentColor" size={15} /> Explore Platform</button>
           <button className="cta-outline" onClick={() => scrollToSection("workflow")}><ChevronDown size={16} /> How It Works</button>
         </motion.div>
         <motion.span className="hero-footnote" initial={{ opacity: 0 }} animate={{ opacity: ready ? 1 : 0 }} transition={{ delay: ready ? 1.25 : 0, duration: .8 }}>Evaluation is permanently free · Offline-first architecture · Instant real-time sync</motion.span>
@@ -260,28 +281,65 @@ function SectionHead({ kicker, tone = "gold", title, subtitle }: { kicker: strin
 
 function DarkSections({ onJoin }: { onJoin: () => void }) {
   const [role, setRole] = useState(0);
-  const [faqOpen, setFaqOpen] = useState(0);
+  const [faqOpen, setFaqOpen] = useState<number>(0);
   const activeRole = ROLES[role];
+
   return <div className="dark-landing" id="how-it-works">
     <section className="dark-section" id="control-room">
       <SectionHead kicker="STOP MANAGING YOUR FESTIVAL WITH SPREADSHEETS" tone="peach" title={<>Sound Familiar? 😫</>} subtitle="Every year, hundreds of school fests suffer from the same preventable administrative nightmares." />
-      <div className="pain-grid">{PAIN_POINTS.map((pain, index) => <Reveal key={pain.name} delay={index * .07}><article className="pain-card"><span className="pain-icon">{pain.icon}</span><h3>{pain.name}</h3><p>{pain.text}</p></article></Reveal>)}</div>
+      <div className="pain-grid">{PAIN_POINTS.map((pain, index) => <Reveal delay={index * .07} key={pain.name}><article className="pain-card"><span className="pain-icon">{pain.icon}</span><h3>{pain.name}</h3><p>{pain.text}</p></article></Reveal>)}</div>
     </section>
 
     <section className="dark-section" id="workflow">
       <SectionHead kicker="ONE UNIFIED COMMAND CENTER" title={<>Up and Running in 5 Seamless Steps 🎯</>} subtitle="Festize replaces fragmented tools with an end-to-end operational pipeline." />
-      <div className="step-grid">{STEPS.map((step, index) => <Reveal key={step.number} delay={index * .06}><article className="step-card"><span className="step-number">{step.number}</span><h3>{step.name}</h3><p>{step.text}</p></article></Reveal>)}</div>
+      <div className="step-grid">{STEPS.map((step, index) => <Reveal delay={index * .06} key={step.number}><article className="step-card"><span className="step-number">{step.number}</span><h3>{step.name}</h3><p>{step.text}</p></article></Reveal>)}</div>
     </section>
 
     <section className="dark-section" id="features">
       <SectionHead kicker="ENGINEERED FOR PRECISION" tone="mint" title={<>Everything Your Festival Needs 🛠️</>} subtitle="Built from real ground experience managing state and district youth cultural festivals." />
-      <div className="feature-grid">{FEATURES.map((feature, index) => <Reveal key={feature.name} delay={index * .05}><article className="feature-card"><span className={`feature-icon tone-${feature.tone}`}><feature.Icon size={19} /></span><h3>{feature.name}</h3><p>{feature.text}</p></article></Reveal>)}</div>
+      <div className="feature-grid">{FEATURES.map((feature, index) => <Reveal delay={index * .05} key={feature.name}><article className="feature-card"><span className={`feature-icon tone-${feature.tone}`}><feature.Icon size={19} /></span><h3>{feature.name}</h3><p>{feature.text}</p></article></Reveal>)}</div>
     </section>
 
     <section className="dark-section" id="roles">
       <SectionHead kicker="TAILORED USER EXPERIENCES" title={<>Right Access for Every Crew Member 🔓</>} subtitle="Each role gets exactly the workspace and controls they need to do their job without confusion." />
-      <Reveal><div className="role-tabs" role="tablist" aria-label="Crew roles">{ROLES.map((item, index) => <button key={item.name} role="tab" aria-selected={role === index} className={role === index ? "active" : ""} onClick={() => setRole(index)}><item.Icon size={15} /> {item.name}</button>)}</div></Reveal>
-      <motion.div key={activeRole.name} role="tabpanel" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3 }} className="role-panel">
+      <Reveal>
+        <div
+          className="role-tabs"
+          role="tablist"
+          aria-label="Crew roles"
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            const next = (role + (event.key === "ArrowRight" ? 1 : -1) + ROLES.length) % ROLES.length;
+            setRole(next);
+            document.getElementById(`role-tab-${next}`)?.focus();
+          }}
+        >
+          {ROLES.map((item, index) => (
+            <button
+              key={item.name}
+              role="tab"
+              id={`role-tab-${index}`}
+              aria-selected={role === index}
+              aria-controls={`role-panel-${index}`}
+              className={role === index ? "active" : ""}
+              onClick={() => setRole(index)}
+            >
+              <item.Icon size={15} /> {item.name}
+            </button>
+          ))}
+        </div>
+      </Reveal>
+      <motion.div
+        key={activeRole.name}
+        role="tabpanel"
+        id={`role-panel-${role}`}
+        aria-labelledby={`role-tab-${role}`}
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: .3 }}
+        className="role-panel"
+      >
         <div className="role-panel-head"><span className="role-panel-icon"><activeRole.Icon size={21} /></span><div><h3>{activeRole.name}</h3><p>{activeRole.tagline}</p></div></div>
         <ul>{activeRole.points.map(point => <li key={point}><Check size={15} />{point}</li>)}</ul>
       </motion.div>
@@ -289,20 +347,57 @@ function DarkSections({ onJoin }: { onJoin: () => void }) {
 
     <section className="dark-section" id="pricing">
       <SectionHead kicker="SIMPLE & TRANSPARENT" tone="mint" title={<>Festival Editions 💰</>} subtitle="Choose the plan that fits your fest. Every plan includes all features." />
-      <div className="edition-grid">{EDITIONS.map((edition, index) => <Reveal key={edition.badge} delay={index * .08}><article className={`edition-card tone-${edition.tone}`}><span className="edition-badge">★ {edition.badge}</span><h3>{edition.intro}</h3><ul>{edition.items.map(item => <li key={item}><Check size={15} />{item}</li>)}</ul><a className="edition-contact" href="https://wa.me/qr/LP2C2F5XW77EN1" target="_blank" rel="noreferrer">Contact</a></article></Reveal>)}</div>
+      <div className="edition-grid">
+        {EDITIONS.map((edition, index) => (
+          <Reveal delay={index * .08} key={edition.badge}>
+            <article className={`edition-card tone-${edition.tone}`}>
+              <span className="edition-badge">★ {edition.badge}</span>
+              <h3>{edition.intro}</h3>
+              <ul>{edition.items.map(item => <li key={item}><Check size={15} />{item}</li>)}</ul>
+              <a className="edition-contact" href="https://wa.me/qr/LP2C2F5XW77EN1" target="_blank" rel="noopener noreferrer">Contact</a>
+            </article>
+          </Reveal>
+        ))}
+      </div>
     </section>
 
     <section className="dark-section faq-section" id="faq">
       <SectionHead kicker="QUESTIONS & ANSWERS" title={<>Frequently Asked Questions 💡</>} subtitle="Straight answers about how Festize behaves when it matters." />
-      <div className="faq-list">{FAQS.map((faq, index) => <Reveal key={faq.question} delay={index * .04}><div className={`faq-item ${faqOpen === index ? "open" : ""}`}><button className="faq-question" aria-expanded={faqOpen === index} onClick={() => setFaqOpen(faqOpen === index ? -1 : index)}>{faq.question}<span>{faqOpen === index ? <Minus size={17} /> : <Plus size={17} />}</span></button>{faqOpen === index && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="faq-answer">{faq.answer}</motion.p>}</div></Reveal>)}</div>
+      <div className="faq-list">
+        {FAQS.map((faq, index) => (
+          <Reveal delay={index * .04} key={faq.question}>
+            <div className={`faq-item ${faqOpen === index ? "open" : ""}`}>
+              <button
+                className="faq-question"
+                aria-expanded={faqOpen === index}
+                aria-controls={`faq-answer-${index}`}
+                onClick={() => setFaqOpen(faqOpen === index ? -1 : index)}
+              >
+                {faq.question}
+                <span>{faqOpen === index ? <Minus size={17} /> : <Plus size={17} />}</span>
+              </button>
+              {faqOpen === index && (
+                <motion.p
+                  id={`faq-answer-${index}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="faq-answer"
+                >
+                  {faq.answer}
+                </motion.p>
+              )}
+            </div>
+          </Reveal>
+        ))}
+      </div>
     </section>
 
-    <footer className="dark-footer"><span className="footer-brand"><FestizeLogo className="footer-logo" title={null} /><span className="wordmark">festize<span>.</span></span></span><span>Let the good things happen.</span><button onClick={onJoin}>Have a fest? <ArrowRight size={16} /></button></footer>
+    <footer className="dark-footer"><span className="footer-brand"><FestizeLogo className="footer-logo" title={null} withWordmark={false} size={30} /><span className="wordmark">festize<span>.</span></span></span><span>Let the good things happen.</span><button onClick={onJoin}>Have a fest? <ArrowRight size={16} /></button></footer>
   </div>;
 }
 
 export function AuthLayout({ children, onBack, eyebrow, title, description }: { children: ReactNode; onBack: () => void; eyebrow: string; title: string; description: string }) {
-  return <div className="auth-screen"><div className="auth-orb auth-orb-one" /><div className="auth-orb auth-orb-two" /><button className="auth-back" onClick={onBack}><ArrowLeft size={18} /> Back</button><div className="auth-brand"><FestizeLogo className="auth-brand-logo" title={null} />festize<span>.</span></div><motion.div className="auth-content" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}</motion.div><div className="auth-foot">A BETTER WAY TO MAKE IT HAPPEN.</div></div>;
+  return <div className="auth-screen"><div className="auth-orb auth-orb-one" /><div className="auth-orb auth-orb-two" /><button className="auth-back" onClick={onBack}><ArrowLeft size={18} /> Back</button><div className="auth-brand"><FestizeLogo className="auth-brand-logo" title={null} withWordmark={false} size={30} />festize<span>.</span></div><motion.div className="auth-content" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}</motion.div><div className="auth-foot">A BETTER WAY TO MAKE IT HAPPEN.</div></div>;
 }
 
 export function PasswordInput({ value, onChange, placeholder = "Enter password" }: { value: string; onChange: (value: string) => void; placeholder?: string }) {

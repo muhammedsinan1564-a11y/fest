@@ -1,3 +1,5 @@
+import type { ScreenDesign, ScreenKey } from "./lib/screenDesign";
+
 export type Role = "MAIN" | "JUDGE" | "MEDIA" | "TEAM MANAGER" | "MONITOR" | "STAGE MANAGER" | "MEMBER" | "PUBLIC RESULT" | "QUIZ MASTER";
 
 export type Section =
@@ -56,16 +58,15 @@ export interface Program {
   venue: "Stage" | "Off stage";
   scaleId: string;
   judgeIds: string[];
-  /** Stage managers assigned to this program. When set, only they see it in stage views. */
   stageManagerIds?: string[];
-  /** Explicit scoring override. When absent: <5 judges -> average, 5+ -> Olympic trimmed mean. */
   scoringMethod?: "average" | "trimmed";
+  /** Extra marks configured on the program and added to the 1st/2nd/3rd holders once judging is confirmed. */
+  placeBonus?: { first: number; second: number; third: number };
+  placeBonusApplied?: boolean;
   entries: ProgramEntry[];
   status: number;
   resultNumber?: number;
-  /** Set by the Monitor section. A program cannot be published until this is true. */
   monitorConfirmed?: boolean;
-  /** When the monitor confirmed it; confirmed results are listed oldest → newest at the bottom. */
   monitorConfirmedAt?: string;
   createdBy?: string;
 }
@@ -74,7 +75,6 @@ export interface Stage { id: string; name: string; details: string; image?: stri
 export interface ScheduleSlot { id: string; date: string; start: string; end: string }
 export interface ScheduleCell {
   id: string; slotId: string; stageId: string; programId: string;
-  /** Minutes this placement is delayed (stage running late). Shifts start+end. */
   delayMinutes?: number;
 }
 
@@ -82,9 +82,7 @@ export type HighlightPlace = "winner" | "runner" | "secondRunner";
 
 export interface HighlightsData {
   liveUrl?: string;
-  /** One submitted video URL per stage program (legacy single-link fallback). */
   programUrls: Record<string, string>;
-  /** Separate video per winner / runner / second runner of each stage program. */
   programWinnerUrls: Record<string, Partial<Record<HighlightPlace, string>>>;
 }
 
@@ -92,7 +90,6 @@ export interface PredictionData {
   active: boolean;
   startedAt?: string;
   closesAt?: string;
-  /** memberId -> predicted teamId */
   responses: Record<string, string>;
 }
 
@@ -101,16 +98,12 @@ export interface QuizQuestion {
   question: string;
   answerType: "options" | "text";
   options: string[];
-  /** Legacy auto-check answer (kept for old fests). New quizzes are reviewed manually. */
   correctAnswer?: string;
   published: boolean;
   createdAt: string;
-  /** Countdown set at creation (two bars: minutes + seconds). 0/empty = no limit. */
   timerMinutes?: number;
   timerSeconds?: number;
-  /** When the quiz stops accepting answers. */
   closesAt?: string;
-  /** Marks count only after the Quiz Master publishes this question's result. */
   resultPublished?: boolean;
   resultPublishedAt?: string;
 }
@@ -120,14 +113,11 @@ export interface QuizAnswer {
   quizId: string;
   memberId: string;
   answer: string;
-  /** Quiz-master verdict (tick = true, cross = false). Points count only after publish. */
   correct: boolean;
-  /** Set once the Quiz Master has reviewed this answer with tick/cross. */
   reviewed?: boolean;
   submittedAt: string;
 }
 
-/** Points count only for reviewed-correct answers on result-published quizzes. */
 export function quizPointsFor(memberId: string, data: { quizzes: QuizQuestion[]; quizAnswers: QuizAnswer[] }): number {
   const publishedIds = new Set(data.quizzes.filter(quiz => quiz.resultPublished).map(quiz => quiz.id));
   return data.quizAnswers.filter(answer => answer.memberId === memberId && answer.correct && publishedIds.has(answer.quizId)).length;
@@ -171,7 +161,6 @@ export interface DesignElement {
   strokeColor?: string;
   strokeWidth?: number;
   rotation?: number;
-  /* --- Extended canvas properties (mobile poster studio parity) --- */
   opacity?: number;
   layerName?: string;
   hidden?: boolean;
@@ -226,13 +215,13 @@ export interface PosterTemplate {
   createdBy?: string;
 }
 
-/** A template with no range set is available for every published result. */
 export function templateCoversResult(template: PosterTemplate, resultNumber?: number) {
   const from = template.fromResult ?? null; const to = template.toResult ?? null;
   if (from === null && to === null) return true;
   if (!resultNumber) return false;
   return resultNumber >= (from ?? 1) && resultNumber <= (to ?? Number.MAX_SAFE_INTEGER);
 }
+
 export interface CardDesign {
   background?: string;
   elements: DesignElement[];
@@ -259,18 +248,19 @@ export interface FestData {
   posters: PosterTemplate[];
   cardDesign: CardDesign;
   publicProgramIds: string[];
-  /** Small fest logo printed at the top-right of every printed/downloaded sheet. */
   festLogo?: string;
-  /** Public, read-only account credentials embedded in the printable QR. */
+  /** Uploaded images (PNG/JPG) that head each role's screen — scoped to this fest only. */
+  screenImages?: { publicResults?: string; member?: string; teamManager?: string; judge?: string; dashboard?: string };
+  /** Editable dashboard canvases (multiple draggable images + animations) per role screen. */
+  screenDesigns?: Partial<Record<ScreenKey, ScreenDesign>>;
   publicResultCredentials?: { username: string; password: string };
   highlights: HighlightsData;
-  /** Max programs one member may enter (per venue). Missing = no limit set yet. */
-  memberProgramLimits?: { stage: number; offStage: number };
+  memberProgramLimits?: { stage: number; offStage: number; byCategory?: Record<string, { stage: number; offStage: number }> };
   prediction: PredictionData;
   quizzes: QuizQuestion[];
   quizAnswers: QuizAnswer[];
   activity: { id: string; text: string; at: string; userId: string }[];
-  settings: { font: string; headingFont: string; accent: string; dark: boolean; bellTone: string; bellDuration: number; bellUnit: "seconds" | "minutes"; bellWarning: number; bellWarningUnit: "seconds" | "minutes"; customTones: { name: string; data: string }[] };
+  settings: { font: string; headingFont: string; accent: string; theme?: string; dark: boolean; bellTone: string; bellDuration: number; bellUnit: "seconds" | "minutes"; bellWarning: number; bellWarningUnit: "seconds" | "minutes"; customTones: { name: string; data: string }[] };
 }
 
 export interface Fest {
@@ -336,14 +326,13 @@ export function emptyData(): FestData {
         { id: id(), kind: "team", x: 7, y: 80, width: 85, height: 7, fontSize: 11, fontFamily: "Arial", color: "#5f6470", align: "center", shape: "square", zoom: 1 },
       ],
     },
-    settings: { font: "IBM Plex Mono", headingFont: "Fraunces", accent: "gold", dark: true, bellTone: "School bell", bellDuration: 5, bellUnit: "seconds", bellWarning: 1, bellWarningUnit: "minutes", customTones: [] },
+    settings: { font: "IBM Plex Mono", headingFont: "Fraunces", accent: "theme", dark: true, bellTone: "School bell", bellDuration: 5, bellUnit: "seconds", bellWarning: 1, bellWarningUnit: "minutes", customTones: [] },
   };
 }
 
-/** Adds fields introduced in newer app versions without deleting saved fest data. */
 export function hydrateFestData(data: Partial<FestData> | undefined): FestData {
   const base = emptyData();
-  const source = data || {};
+  const source: Partial<FestData> = data || {};
   return {
     ...base,
     ...source,
@@ -357,20 +346,16 @@ export function hydrateFestData(data: Partial<FestData> | undefined): FestData {
 
 export function getGrade(mark: number | null, scale?: GradeScale): GradeRange | null {
   if (mark === null || !Number.isFinite(mark)) return null;
-  return (scale || standardScale).ranges.find(range => mark >= range.min && mark <= range.max) || null;
+  const clamped = Math.min(100, mark);
+  return (scale || standardScale).ranges.find(range => clamped >= range.min && clamped <= range.max) || null;
 }
 
-/**
- * FAST scoring: final mark for one candidate.
- * - <5 judges (or explicit "average") -> dynamic average of active judges.
- * - 5+ judges (or explicit "trimmed") -> Olympic trimmed mean (drop high+low).
- * Missing submissions are ignored, never counted as zero.
- */
 export function entryMark(entry: ProgramEntry, program: Program): number | null {
   return entryFinal(entry, program).mark;
 }
 
-export function entryFinal(entry: ProgramEntry, program: Program): {
+/** Raw judge mark (average or Olympic trimmed mean), before any podium bonus. */
+export function rawEntryFinal(entry: ProgramEntry, program: Program): {
   mark: number | null; method: "average" | "trimmed"; counted: number; panel: number; dropped: number[];
 } {
   const judges = program.judgeIds.length ? program.judgeIds : Object.keys(entry.marks);
@@ -391,6 +376,35 @@ export function entryFinal(entry: ProgramEntry, program: Program): {
     mark: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
     method, counted: values.length, panel: judges.length, dropped: [],
   };
+}
+
+/** Place bonus mark for an entry based on the program's raw judge ranking (1st/2nd/3rd). */
+export function entryPlaceBonus(entry: ProgramEntry, program: Program): number {
+  const bonus = program.placeBonus;
+  if (!bonus || (!bonus.first && !bonus.second && !bonus.third)) return 0;
+  const ranked = program.entries
+    .map(item => ({ id: item.id, raw: rawEntryFinal(item, program).mark }))
+    .filter((row): row is { id: string; raw: number } => row.raw !== null)
+    .sort((a, b) => b.raw - a.raw);
+  const mine = ranked.find(row => row.id === entry.id);
+  if (!mine) return 0;
+  // Standard competition rank: ties for a place receive that place's bonus.
+  const rank = 1 + ranked.filter(other => other.raw > mine.raw).length;
+  if (rank === 1) return bonus.first || 0;
+  if (rank === 2) return bonus.second || 0;
+  if (rank === 3) return bonus.third || 0;
+  return 0;
+}
+
+/** Final mark of the program: raw judge mark plus any 1st/2nd/3rd place mark configured on the program. */
+export function entryFinal(entry: ProgramEntry, program: Program): {
+  mark: number | null; rawMark: number | null; bonus: number; method: "average" | "trimmed"; counted: number; panel: number; dropped: number[];
+} {
+  const raw = rawEntryFinal(entry, program);
+  if (raw.mark === null) return { ...raw, rawMark: null, bonus: 0 };
+  const bonus = entryPlaceBonus(entry, program);
+  const mark = Math.round((raw.mark + bonus) * 10) / 10;
+  return { ...raw, mark, rawMark: raw.mark, bonus };
 }
 
 export function entryGrade(entry: ProgramEntry, program: Program, data: FestData) {
@@ -439,19 +453,34 @@ export function createDemoFest(): Fest {
     { id: "art-on-canvas", name: "Art on Canvas", description: "An open-theme visual arts event.", categoryId: "open", maxPerTeam: 2, groupSize: 1, format: "Individual", venue: "Off stage", scaleId: "scale-standard", judgeIds: [], entries: [], status: -1 },
   ];
   data.stages = [
-    { id: "stage-1", name: "The Main Stage", details: "Open-air amphitheatre · North lawn" },
-    { id: "stage-2", name: "Studio Hall", details: "Indoor performance space · Block B" },
+    { id: "stage-1", name: "The Main Stage", details: "Open-air amphitheater" },
+    { id: "stage-2", name: "Gallery Hall", details: "Indoor exhibition and literary hall" },
   ];
-  data.publicProgramIds = ["solo-song"];
-  data.slots = [{ id: "slot-1", date: new Date().toISOString().slice(0, 10), start: "10:00", end: "11:00" }, { id: "slot-2", date: new Date().toISOString().slice(0, 10), start: "11:30", end: "12:30" }];
-  data.schedule = [{ id: id(), slotId: "slot-1", stageId: "stage-1", programId: "solo-song" }, { id: id(), slotId: "slot-2", stageId: "stage-1", programId: "group-dance" }];
-  data.posters = [{ id: "poster-demo", name: "Editorial winner", elements: [
-    { id: id(), kind: "text", text: "THE WINNERS", x: 8, y: 10, width: 84, height: 9, fontSize: 16, fontFamily: "IBM Plex Mono", color: "#ffb596", align: "left", shape: "square", zoom: 1 },
-    { id: id(), kind: "program", x: 8, y: 28, width: 84, height: 13, fontSize: 29, fontFamily: "DM Sans", color: "#ffffff", align: "left", shape: "square", zoom: 1 },
-    { id: id(), kind: "winner", x: 8, y: 56, width: 84, height: 12, fontSize: 23, fontFamily: "DM Sans", color: "#ffffff", align: "left", shape: "square", zoom: 1 },
-    { id: id(), kind: "runner", x: 8, y: 73, width: 84, height: 8, fontSize: 14, fontFamily: "IBM Plex Mono", color: "#e9ccce", align: "left", shape: "square", zoom: 1 },
-    { id: id(), kind: "number", x: 80, y: 8, width: 13, height: 7, fontSize: 17, fontFamily: "DM Sans", color: "#ffffff", align: "right", shape: "square", zoom: 1 },
-  ] }];
-  data.activity = [{ id: id(), text: "Solo Song result published", at: new Date().toISOString(), userId: "main-demo" }];
-  return { id: "demo-fest", name: "Aurora Arts Festival", code: "AURORA2026041972", date: new Date().toISOString().slice(0, 10), ownerId: "demo-owner", mainUsers: [{ id: "main-demo", name: "MAIN69", password: "DEMO999", role: "MAIN" }], data, demo: true };
+  return {
+    id: "demo-fest",
+    name: "Festize Demo 2026",
+    code: "FESTIZE2026DEMO",
+    date: "2026-11-15",
+    ownerId: "demo-owner",
+    mainUsers: [{ id: "main-demo", name: "MAIN101", password: "MAIN123", role: "MAIN" }],
+    data,
+    demo: true,
+  };
 }
+
+/* ------------------------------------------------------------------------ */
+/* Compatibility re-exports for the existing sections/lib modules.           */
+/* (Names that clash with the domain model above — Team, Category,           */
+/*  ProgramEntry, QuizQuestion — intentionally come from this file only.)   */
+/* ------------------------------------------------------------------------ */
+
+export type { SectionProps, RankedEntry, TeamStanding, MemberStanding } from "./sections/common";
+
+export type { ExportableDesignDoc, ExportableLayer } from "./lib/exporter";
+export type { EmblemStyle, FestivalBrandKit } from "./lib/brand";
+export type { GradeCode, PointsMatrix } from "./lib/fast";
+export type { ShapeKind } from "./lib/shapes";
+export type { ThemeId, WorkspaceTheme } from "./lib/theme";
+export type { UiFontSettings } from "./lib/settingsFonts";
+export type { StudioFont, FontPairing, FontCategory } from "./lib/fonts";
+export type { ContrastReport, RGB, WcagLevel } from "./lib/contrast";

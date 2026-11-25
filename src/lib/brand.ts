@@ -6,21 +6,14 @@
  * - `stampPngTopRight` composites that logo onto a rendered PNG so exports that
  *   are produced from a node (posters) get it too.
  */
-import { LOGO_COLORS, LOGO_SHAPES } from "../FestizeLogo";
+import { festizeLogoBody } from "../FestizeLogo";
+import { pickReadableText } from "./contrast";
 
-/** The Festize mark as a standalone SVG document, for images and PDFs. */
+/** The official Festize logo as a standalone SVG document, for images and PDFs. */
 export function festizeLogoSvg(transparentTile = false): string {
-  const tile = transparentTile
-    ? ""
-    : `<rect width="512" height="512" rx="76" fill="${LOGO_COLORS.tile}"/>`;
   return [
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">',
-    tile,
-    `<path d="${LOGO_SHAPES.mid}" fill="${LOGO_COLORS.deep}"/>`,
-    `<path d="${LOGO_SHAPES.stem}" fill="${LOGO_COLORS.gold}"/>`,
-    `<rect x="216" y="160" width="296" height="54" fill="${LOGO_COLORS.gold}"/>`,
-    `<ellipse cx="156" cy="192" rx="28" ry="23" transform="rotate(-28 156 192)" fill="${LOGO_COLORS.olive}"/>`,
-    `<path d="${LOGO_SHAPES.dot}" fill="${LOGO_COLORS.white}"/>`,
+    '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">',
+    festizeLogoBody(!transparentTile),
     "</svg>",
   ].join("");
 }
@@ -68,4 +61,121 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error("Image could not be loaded"));
     image.src = src;
   });
+}
+
+/* ------------------------------------------------------------------------ */
+/* Festival Brand Kit — palette presets consumed by the Studio, Highlights,  */
+/* Printouts and Setup modules.                                              */
+/* ------------------------------------------------------------------------ */
+
+export type EmblemStyle = "starburst" | "arch" | "diamond" | "crest" | "minimal";
+
+export interface FestivalBrandKit {
+  presetId: string;
+  primaryColor: string;
+  secondaryColor: string;
+  canvasBg: string;
+  inkColor: string;
+  goldAccent: string;
+  fontPairingId: string;
+  emblemStyle: EmblemStyle;
+  motto: string;
+  hashtag: string;
+  organizerLine: string;
+}
+
+export interface BrandPreset {
+  id: string;
+  name: string;
+  description: string;
+  kit: Omit<FestivalBrandKit, "motto" | "hashtag" | "organizerLine">;
+}
+
+export const BRAND_PRESETS: BrandPreset[] = [
+  {
+    id: "vermilion-gala",
+    name: "Vermilion Gala",
+    description: "Editorial ivory canvas with bold festival vermilion & royal indigo",
+    kit: {
+      presetId: "vermilion-gala",
+      primaryColor: "#E5484D",
+      secondaryColor: "#3730A3",
+      canvasBg: "#FFFDF9",
+      inkColor: "#161514",
+      goldAccent: "#D97706",
+      fontPairingId: "editorial-festival",
+      emblemStyle: "starburst",
+    },
+  },
+  {
+    id: "electric-arena",
+    name: "Electric Arena",
+    description: "Deep stage obsidian with hyper-lime and cobalt spotlight accents",
+    kit: {
+      presetId: "electric-arena",
+      primaryColor: "#A3E635",
+      secondaryColor: "#38BDF8",
+      canvasBg: "#0F1117",
+      inkColor: "#F8FAFC",
+      goldAccent: "#FACC15",
+      fontPairingId: "kinetic-stage",
+      emblemStyle: "diamond",
+    },
+  },
+  {
+    id: "biennale-cobalt",
+    name: "Biennale Cobalt",
+    description: "Architectural gallery blue paired with warm museum paper",
+    kit: {
+      presetId: "biennale-cobalt",
+      primaryColor: "#1D4ED8",
+      secondaryColor: "#EA580C",
+      canvasBg: "#F5F3EE",
+      inkColor: "#0F172A",
+      goldAccent: "#B45309",
+      fontPairingId: "swiss-broadcast",
+      emblemStyle: "arch",
+    },
+  },
+  {
+    id: "saffron-heritage",
+    name: "Saffron Heritage",
+    description: "Rich marigold, deep crimson & parchment inspired by classical arts",
+    kit: {
+      presetId: "saffron-heritage",
+      primaryColor: "#B91C1C",
+      secondaryColor: "#D97706",
+      canvasBg: "#FEF7EC",
+      inkColor: "#27130C",
+      goldAccent: "#CA8A04",
+      fontPairingId: "editorial-festival",
+      emblemStyle: "crest",
+    },
+  },
+  {
+    id: "swiss-monolith",
+    name: "Swiss Monolith",
+    description: "High-contrast brutalist poster black, stark white, and signal red",
+    kit: {
+      presetId: "swiss-monolith",
+      primaryColor: "#FF2E2E",
+      secondaryColor: "#111111",
+      canvasBg: "#FFFFFF",
+      inkColor: "#0A0A0A",
+      goldAccent: "#EAB308",
+      fontPairingId: "poster-headline",
+      emblemStyle: "minimal",
+    },
+  },
+];
+
+export const DEFAULT_BRAND_KIT: FestivalBrandKit = {
+  ...BRAND_PRESETS[0].kit,
+  motto: "Where Rhythm, Craft & Stage Converge",
+  hashtag: "#AureliaFest2026",
+  organizerLine: "Directorate of Student Arts & Cultural Affairs",
+};
+
+export function getBrandReadableOnPrimary(brand: FestivalBrandKit): string {
+  return pickReadableText(brand.primaryColor, "#FFFFFF", "#111111");
 }

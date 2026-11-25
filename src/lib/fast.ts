@@ -379,20 +379,120 @@ export function dueReminders(
 // ---------------------------------------------------------------------------
 // 6. REALTIME — architecture contract (Supabase Realtime / WebSocket)
 // ---------------------------------------------------------------------------
-/**
- * Realtime flow (already wired in this app via `watchFest`):
- *
- *   editor device --PUT fest_snapshots--> Postgres --postgres_changes--> channel
- *        `fest:{festId}` --> every subscribed device re-renders the grid.
- *
- * - Delays: one `delayMinutes` patch on a ScheduleCell re-times that cell
- *   everywhere within ~1s, with no full reload.
- * - Reschedules: moving a cell to another slotId/stageId is the same patch.
- * - Presence (optional): subscribe with `{ presence: { key: userId } }` to
- *   show "3 crew viewing" on the grid.
- *
- * For a dedicated WebSocket server the same payload shape applies:
- *   { type: "schedule.patch", festId, cellId, slotId, stageId, delayMinutes,
- *     actorId, at } — broadcast to room `fest:{festId}`.
- */
 export const REALTIME_CHANNEL_FOR = (festId: string) => `fest-${festId}`;
+
+/* ------------------------------------------------------------------------ */
+/* Legacy points-matrix engine kept for the workspace modules                */
+/* (sections/common.ts, Programs.tsx, Tools.tsx, types.ts, Workspace.tsx).   */
+/* ------------------------------------------------------------------------ */
+
+export type GradeCode = 'A+' | 'A' | 'B' | 'C' | 'None';
+
+export interface PointsMatrix {
+  individualRank: { 1: number; 2: number; 3: number };
+  groupRank: { 1: number; 2: number; 3: number };
+  gradeBonus: Record<GradeCode, number>;
+}
+
+export const DEFAULT_POINTS_MATRIX: PointsMatrix = {
+  individualRank: { 1: 5, 2: 3, 3: 1 },
+  groupRank: { 1: 10, 2: 6, 3: 3 },
+  gradeBonus: {
+    'A+': 6,
+    A: 5,
+    B: 3,
+    C: 1,
+    None: 0,
+  },
+};
+
+export function computeGradeFromScore(score: number): GradeCode {
+  if (score >= 90) return 'A+';
+  if (score >= 80) return 'A';
+  if (score >= 70) return 'B';
+  if (score >= 60) return 'C';
+  return 'None';
+}
+
+export function calculateEntryPoints(params: {
+  isGroup: boolean;
+  rank?: 1 | 2 | 3 | null;
+  grade: GradeCode;
+  matrix?: PointsMatrix;
+}): number {
+  const matrix = params.matrix ?? DEFAULT_POINTS_MATRIX;
+  const rankTable = params.isGroup ? matrix.groupRank : matrix.individualRank;
+  const rankPts = params.rank ? rankTable[params.rank] ?? 0 : 0;
+  const gradePts = matrix.gradeBonus[params.grade] ?? 0;
+  return rankPts + gradePts;
+}
+
+export interface ParsedFastEntry {
+  chestNumber: string;
+  rank: 1 | 2 | 3 | null;
+  score: number | null;
+  grade: GradeCode;
+}
+
+/**
+ * Parses shorthand tabulation input such as:
+ *   "204 1 94.5" -> chest 204, rank 1, score 94.5, grade A+
+ *   "#108 2nd A 84" -> chest 108, rank 2, score 84, grade A
+ *   "315 B" -> chest 315, rank null, score null, grade B
+ */
+export function parseFastResultLine(line: string): ParsedFastEntry | null {
+  const cleaned = line.trim();
+  if (!cleaned) return null;
+
+  const tokens = cleaned.split(/[\s,|]+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  const chestNumber = tokens[0].replace(/^#/, '').toUpperCase();
+  if (!chestNumber) return null;
+
+  let rank: 1 | 2 | 3 | null = null;
+  let score: number | null = null;
+  let explicitGrade: GradeCode | null = null;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const raw = tokens[i].toUpperCase();
+    if (raw === '1' || raw === '1ST' || raw === 'R1') {
+      rank = 1;
+      continue;
+    }
+    if (raw === '2' || raw === '2ND' || raw === 'R2') {
+      rank = 2;
+      continue;
+    }
+    if (raw === '3' || raw === '3RD' || raw === 'R3') {
+      rank = 3;
+      continue;
+    }
+    if (raw === 'A+' || raw === 'A' || raw === 'B' || raw === 'C') {
+      explicitGrade = raw as GradeCode;
+      continue;
+    }
+    const num = Number(raw);
+    if (!Number.isNaN(num) && num >= 0 && num <= 100) {
+      score = Number(num.toFixed(1));
+    }
+  }
+
+  const grade: GradeCode =
+    explicitGrade ?? (score !== null ? computeGradeFromScore(score) : 'None');
+
+  return {
+    chestNumber,
+    rank,
+    score,
+    grade,
+  };
+}
+
+export function fastFuzzyMatch(query: string, ...targets: Array<string | undefined>): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const combined = targets.filter(Boolean).join(' ').toLowerCase();
+  const terms = q.split(/\s+/);
+  return terms.every((term) => combined.includes(term));
+}

@@ -67,29 +67,78 @@ alter table public.fests enable row level security;
 alter table public.fest_members enable row level security;
 alter table public.fest_snapshots enable row level security;
 
-create policy "owners and members read their fest" on public.fests for select to authenticated
-using (owner_id = auth.uid() or public.is_fest_member(id));
+-- Existing policies-ന് മുൻപ് ഡ്രോപ്പ് കമാൻഡുകൾ ചേർക്കുക
+
+drop policy if exists "owners and members read their fest" on public.fests;
+create policy "owners and members read their fest" on public.fests for
+select
+  to authenticated using (
+    owner_id = auth.uid ()
+    or public.is_fest_member (id)
+  );
+
+drop policy if exists "owners create fests" on public.fests;
 create policy "owners create fests" on public.fests for insert to authenticated
-with check (owner_id = auth.uid());
-create policy "owners edit fests" on public.fests for update to authenticated
-using (owner_id = auth.uid()) with check (owner_id = auth.uid());
-create policy "owners delete fests" on public.fests for delete to authenticated
-using (owner_id = auth.uid());
+with
+  check (owner_id = auth.uid ());
 
-create policy "members read their own membership" on public.fest_members for select to authenticated
-using (auth_user_id = auth.uid() or exists (
-  select 1 from public.fests f where f.id = fest_id and f.owner_id = auth.uid()
-));
+drop policy if exists "owners edit fests" on public.fests;
+create policy "owners edit fests" on public.fests
+for update
+  to authenticated using (owner_id = auth.uid ())
+with
+  check (owner_id = auth.uid ());
 
-create policy "fest participants read one snapshot" on public.fest_snapshots for select to authenticated
-using (owner_id = auth.uid() or public.is_fest_member(fest_id));
+drop policy if exists "owners delete fests" on public.fests;
+create policy "owners delete fests" on public.fests for delete to authenticated using (owner_id = auth.uid ());
+
+drop policy if exists "members read their own membership" on public.fest_members;
+create policy "members read their own membership" on public.fest_members for
+select
+  to authenticated using (
+    auth_user_id = auth.uid ()
+    or exists (
+      select
+        1
+      from
+        public.fests f
+      where
+        f.id = fest_id
+        and f.owner_id = auth.uid ()
+    )
+  );
+
+drop policy if exists "fest participants read one snapshot" on public.fest_snapshots;
+create policy "fest participants read one snapshot" on public.fest_snapshots for
+select
+  to authenticated using (
+    owner_id = auth.uid ()
+    or public.is_fest_member (fest_id)
+  );
+
+drop policy if exists "fest owner creates snapshot" on public.fest_snapshots;
 create policy "fest owner creates snapshot" on public.fest_snapshots for insert to authenticated
-with check (owner_id = auth.uid() and exists (
-  select 1 from public.fests f where f.id = fest_id and f.owner_id = auth.uid()
-));
-create policy "non-member-readonly staff edit their snapshot" on public.fest_snapshots for update to authenticated
-using (public.can_write_fest(fest_id)) with check (public.can_write_fest(fest_id));
+with
+  check (
+    owner_id = auth.uid ()
+    and exists (
+      select
+        1
+      from
+        public.fests f
+      where
+        f.id = fest_id
+        and f.owner_id = auth.uid ()
+    )
+  );
 
+drop policy if exists "non-member-readonly staff edit their snapshot" on public.fest_snapshots;
+create policy "non-member-readonly staff edit their snapshot" on public.fest_snapshots
+for update
+  to authenticated using (public.can_write_fest (fest_id))
+with
+  check (public.can_write_fest (fest_id));
+  
 -- Real-time updates are filtered by the same RLS policies.
 alter table public.fest_snapshots replica identity full;
 do $$ begin

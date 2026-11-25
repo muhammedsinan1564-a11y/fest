@@ -1,25 +1,103 @@
 # Festize
 
-A React, TypeScript, Vite and Tailwind CSS fest-management app. The Explore workspace runs locally without configuration. Cloud mode uses Supabase Auth, Postgres, Row Level Security and Realtime so a fest's staff can use the same fest code and credentials on different devices.
+Festize is a single-page React + TypeScript + Vite application that runs an
+entire inter-house arts festival from one browser tab: live championship
+standings, program tabulation, multi-stage scheduling, backstage operations,
+a poster/badge/certificate design studio, print-ready gazettes, analytics,
+a quizmaster stage, a stage stopwatch, and a tabulation toolkit.
 
-## Cloud Setup
+## Quick start
 
-1. Create a Supabase project and run `supabase/schema.sql` in its SQL editor.
-2. Create an administrator in Supabase Authentication with your chosen email, and set its password to the access code `SINAN610CM321`. Set that email as `VITE_FESTIZE_ADMIN_EMAIL`.
-3. Deploy `supabase/functions/provision-user` to the same project. The function requires the standard server-side `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` secrets. Never put the service-role key in Vite environment variables.
-4. Copy `.env.example` to `.env.local` and enter the project's URL, anon key and admin email. Redeploy the frontend with those values.
-5. Create fests in the admin area. The main-user passwords are displayed at creation. Share the fest code, username and password securely. Every role uses the same code on the sign-in screen.
+```bash
+npm install
+npm run dev        # start the Vite dev server
+npm run build      # production build (single-file bundle in dist/)
+npm run preview    # preview the production build
+```
 
-Administrator access is reached by typing `SINAN610CM321` into the fest-code bar, which signs you straight in. If that automatic sign-in fails in cloud mode, the password screen appears as a fallback.
+Open the dev server URL (default `http://localhost:5173`). All workspace
+state is persisted automatically to `localStorage` — no account needed.
 
-Explore role credentials also include `PUBLICRESULT / PUBLIC123` and `QUIZMASTER / QUIZ123`.
+## Environment variables
 
-The browser only has access to fests allowed by the signed-in Supabase user. All fest data is scoped by `fest_id`, and changes in one fest do not appear in another. Realtime updates refresh other signed-in devices. The database stores no staff passwords in the fest snapshot; Supabase Auth owns those credentials. Existing passwords are shown only during creation in cloud mode.
+Copy `.env.example` to `.env`. Everything is optional:
 
-Without the three `VITE_` settings, the app explicitly enters offline preview mode. Offline-created fests are kept in that browser only and cannot sync across devices. The Explore workspace is a separate local sample with the stated limits.
+| Variable | Purpose |
+| --- | --- |
+| `VITE_SUPABASE_URL` | Enables optional Supabase cloud snapshots of the workspace |
+| `VITE_SUPABASE_ANON_KEY` | Anon key for the same Supabase project |
 
-## Notes
+Without Supabase env vars, Festize runs fully offline.
 
-- Staff account creation in cloud mode requires the deployed Edge Function. The fest owner can create main users, and main users can create staff. A team manager may create members only for their team.
-- The current JSON snapshot is protected by fest-level RLS; role-specific editing restrictions are applied in the interface. For a production deployment where untrusted staff can call the database directly, move individual mutations into role-checked server functions before giving staff broader edit rights.
-- The access code is written into the app source, so it ships inside the published JavaScript bundle and anyone inspecting the build can read it. It hides the admin entrance rather than protecting it. Before a real deployment, keep the password screen as the actual check, or rotate the Supabase admin password and treat the code as a shortcut only for trusted devices.
+## Optional Supabase setup
+
+```bash
+supabase start        # local stack (see supabase/config.toml)
+supabase db reset     # applies supabase/migrations/0001_festize_workspace_snapshots.sql
+```
+
+Then put the printed `API URL` and `anon key` into `.env` as
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. The **Tabulation Toolkit**
+then shows *Save to Cloud* / *Load from Cloud* buttons that sync the whole
+workspace JSON to the `festize_workspace_snapshots` table.
+
+## Project structure
+
+```
+├── index.html                  # entry HTML (title, fonts, meta)
+├── .env.example                # env var template
+├── supabase/                   # optional Supabase local config + migrations
+│   ├── config.toml
+│   └── migrations/0001_festize_workspace_snapshots.sql
+└── src/
+    ├── main.tsx                # React root bootstrap
+    ├── App.tsx                 # app shell: Landing ↔ Workspace view switch
+    ├── Landing.tsx             # marketing/hero landing page
+    ├── Intro.tsx               # first-run onboarding tour overlay
+    ├── Workspace.tsx           # workspace shell: sidebar nav + section router
+    ├── FestizeLogo.tsx         # brand logo lockup (SVG)
+    ├── ThemePicker.tsx         # workspace theme swatch picker
+    ├── types.ts                # central re-export of shared domain types
+    ├── ui.tsx                  # shared UI primitives (Button, Card, Input...)
+    ├── vite-env.d.ts           # Vite client + env typings
+    ├── index.css               # Tailwind v4 import + Festize theme tokens
+    ├── supabase.ts             # optional Supabase client + snapshot helpers
+    ├── utils/cn.ts             # clsx + tailwind-merge helper
+    ├── lib/                    # domain utilities & configuration
+    │   ├── brand.ts            #   festival brand kit & palette presets
+    │   ├── contrast.ts         #   WCAG 2.1 contrast engine
+    │   ├── exporter.ts         #   SVG/PNG/CSV/JSON/print exporters
+    │   ├── fast.ts             #   points matrix + fast result shorthand parser
+    │   ├── fonts.ts            #   studio typefaces & font pairings
+    │   ├── persistence.ts      #   versioned localStorage persistence
+    │   ├── settingsFonts.ts    #   UI typography & density settings
+    │   ├── shapes.tsx          #   vector festival shape library (React + SVG)
+    │   └── theme.ts            #   workspace light/dark themes
+    └── sections/               # the 14 application modules
+        ├── common.ts           #   shared types, standings, seed state
+        ├── Highlights.tsx      #   championship standings & result gazette
+        ├── Programs.tsx        #   programs registry & fast tabulation desk
+        ├── ScheduleAdvanced.tsx#   multi-stage timeline + clash engine
+        ├── Operations.tsx      #   backstage command center
+        ├── NewDocumentDialog.tsx#  studio artboard creation modal
+        ├── Designer.tsx        #   poster/badge/certificate studio
+        ├── Printouts.tsx       #   jury sheets, call sheets, gazettes, slips
+        ├── Insights.tsx        #   analytics dashboard
+        ├── Prediction.tsx      #   what-if championship simulator
+        ├── Quiz.tsx            #   quizmaster stage & buzzer scoreboard
+        ├── Stopwatch.tsx       #   stage timekeeper with cue bells
+        ├── Tools.tsx           #   cipher draw, score normalizer, backup
+        └── Setup.tsx           #   festival profile, houses, themes, points
+```
+
+## Keyboard shortcuts
+
+- `⌘K` / `Ctrl+K` — quick-jump command palette (modules & programs)
+- `Esc` — close dialogs
+
+## Tech stack
+
+- **React 19** + **TypeScript** (strict)
+- **Vite 7** with `vite-plugin-singlefile` (produces one self-contained `dist/index.html`)
+- **Tailwind CSS v4** (`@tailwindcss/vite`) with CSS-variable theming
+- **lucide-react** icons, **@supabase/supabase-js** (optional cloud sync)

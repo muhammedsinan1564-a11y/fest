@@ -35,7 +35,7 @@ import { FestizeLogo } from "./FestizeLogo";
 import IntroSequence, { shouldPlayIntro } from "./Intro";
 import ThemePicker from "./ThemePicker";
 
-type Screen = "landing" | "admin-login" | "admin" | "join" | "fest-login" | "workspace";
+type Screen = "Landing" | "admin-login" | "admin" | "join" | "fest-login" | "workspace";
 
 const ADMIN_KEY = "SINAN610CM321";
 

@@ -69,7 +69,7 @@ import {
   TeamMarksSection,
   TopCandidatesSection,
 } from "./sections/Insights";
-import { IDCardSection, PosterTemplatesSection } from "./sections/designer";
+import { IDCardSection, PosterTemplatesSection } from "./sections/Designer";
 import { PrintoutsSection } from "./sections/Printouts";
 import { StopwatchSection } from "./sections/Stopwatch";
 import { HighlightsSection } from "./sections/Highlights";

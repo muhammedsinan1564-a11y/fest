@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Copy, LockKeyhole, Plus, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { AuthLayout, Landing, PasswordInput } from "./landing";
+import { AuthLayout, Landing, PasswordInput } from "./Landing";
 import { Button, Field, IconButton, Modal, Toast } from "./ui";
 import {
   createDemoFest,

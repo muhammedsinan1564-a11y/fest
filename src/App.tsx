@@ -53,7 +53,7 @@ const allLogins = (fest: Fest): UserRecord[] => [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("landing");
+  const [screen, setScreen] = useState<Screen>("Landing");
   const [fests, setFests] = useState<Fest[]>(() => (cloudEnabled ? [] : loadOfflineFests()));
   const [activeFest, setActiveFest] = useState<Fest | null>(null);
   const activeRef = useRef<Fest | null>(null);

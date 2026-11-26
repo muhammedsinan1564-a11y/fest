@@ -18,7 +18,7 @@ import {
   type ScheduleSlot,
 } from "../types";
 import { cellEndMs, cellStartMs } from "../lib/fast";
-import { DesignCanvas, fitBox } from "./designer";
+import { DesignCanvas, fitBox } from "./Designer";
 import { readTheme, SITE_THEMES, useSiteTheme, waveThemeChange } from "../lib/theme";
 import { downloadBlob, downloadNodePng, fileSlug } from "../lib/exporter";
 import { memberPrograms, rankedEntries, readImage, type SectionProps } from "./common";

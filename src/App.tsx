@@ -35,7 +35,7 @@ import { FestizeLogo } from "./FestizeLogo";
 import IntroSequence, { shouldPlayIntro } from "./Intro";
 import ThemePicker from "./ThemePicker";
 
-type Screen = "Landing" | "admin-login" | "admin" | "join" | "fest-login" | "workspace";
+type Screen = "landing" | "admin-login" | "admin" | "join" | "fest-login" | "workspace";
 
 const ADMIN_KEY = "SINAN610CM321";
 
@@ -53,7 +53,7 @@ const allLogins = (fest: Fest): UserRecord[] => [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("Landing");
+  const [screen, setScreen] = useState<Screen>("landing");
   const [fests, setFests] = useState<Fest[]>(() => (cloudEnabled ? [] : loadOfflineFests()));
   const [activeFest, setActiveFest] = useState<Fest | null>(null);
   const activeRef = useRef<Fest | null>(null);
